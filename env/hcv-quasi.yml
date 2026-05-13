@@ -1,0 +1,49 @@
+name: hcv-quasi
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+
+dependencies:
+  # Python runtime
+  - conda-forge::python=3.11
+
+  # Workflow manager
+  - bioconda::nextflow=24.10.5
+
+  # Read QC and filtering
+  - bioconda::chopper=0.9.2
+  - bioconda::nanoplot=1.43.0
+  - bioconda::nanoq=0.10.0
+
+  # Alignment
+  - bioconda::minimap2=2.28
+
+  # SAM/BAM/VCF manipulation
+  - bioconda::samtools=1.21
+  - bioconda::bcftools=1.21
+
+  # Coverage
+  - bioconda::mosdepth=0.3.10
+
+  # FASTA utilities
+  - bioconda::seqkit=2.8.2
+
+  # Depth normalisation / subsampling
+  - bioconda::rasusa=2.1.0
+
+  # Variant calling
+  - bioconda::lofreq=2.1.5
+  - bioconda::clair3=1.0.10
+
+  # QC aggregation
+  - bioconda::multiqc=1.25.1
+
+  # Alternative host depletion
+  - bioconda::hostile=1.1.0
+
+  # Python BAM parsing
+  - bioconda::pysam=0.22.1
+
+  # NOTE: DEVIDER v0.0.1 has no bioconda package and no public container image.
+  # It is built from source via bin/install_devider.sh (Prompt 20).

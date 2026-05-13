@@ -1,0 +1,21 @@
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+# Nextflow outputs
+results/
+work/
+.nextflow/
+.nextflow.log*
+
+# Index files (regenerated at runtime)
+*.mmi
+*.fai
+
+# Log files
+*.log
+pixi.toml
+pixi.lock
+CLAUDE.md
+docs/architecture_reasoning.md
+docs/implementation_prompts.md

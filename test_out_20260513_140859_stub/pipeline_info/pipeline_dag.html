@@ -1,0 +1,242 @@
+<!--
+  ~ Copyright 2013-2024, Seqera Labs
+  ~
+  ~ Licensed under the Apache License, Version 2.0 (the "License");
+  ~ you may not use this file except in compliance with the License.
+  ~ You may obtain a copy of the License at
+  ~
+  ~     http://www.apache.org/licenses/LICENSE-2.0
+  ~
+  ~ Unless required by applicable law or agreed to in writing, software
+  ~ distributed under the License is distributed on an "AS IS" BASIS,
+  ~ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  ~ See the License for the specific language governing permissions and
+  ~ limitations under the License.
+  -->
+<html>
+<head>
+<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1, maximum-scale=1">
+</head>
+<body>
+<pre class="mermaid" style="text-align: center;">
+flowchart TB
+    subgraph " "
+    v1["Channel.fromPath"]
+    v19["Channel.fromPath"]
+    v28["Channel.fromPath"]
+    v221["Channel.fromPath"]
+    end
+    subgraph HCV_QUASI
+    v2([INPUT_CHECK])
+    subgraph RAW_QC
+    v4([NANOPLOT])
+    v5([NANOQ])
+    end
+    v10([CHOPPER])
+    v17([NANOQ_FILT])
+    v20([INDEX_HOST])
+    v23([HOST_DEPLETE_MINIMAP2])
+    v26([NANOQ_POSTHOST])
+    v29([INDEX_PANEL])
+    v32([MINIMAP2_ROUND1])
+    v38([GENOTYPE_CLASSIFY])
+    subgraph GENOTYPE_BRANCH
+    v55([PARTITION_READS])
+    end
+    subgraph BUILD_CONSENSUS
+    v73([EXTRACT_REF])
+    v79([MINIMAP2_CONSENSUS_MAP])
+    v84([BCFTOOLS_CONSENSUS_CALL])
+    v87([MAKE_MASK_BED])
+    v94([APPLY_CONSENSUS])
+    end
+    v102([MINIMAP2_ROUND2])
+    v105([MOSDEPTH])
+    subgraph PREP_LOFREQ_INPUT
+    v111([RASUSA])
+    v117([MINIMAP2_ROUND2])
+    v125([LOFREQ_PREPROCESS])
+    end
+    v132([LOFREQ_CALL])
+    v134([VARIANT_FILTER])
+    subgraph PREP_DEVIDER_INPUT
+    v140([RASUSA])
+    v146([MINIMAP2_ROUND2])
+    v154([LOFREQ_PREPROCESS])
+    end
+    v167([DEVIDER])
+    v170([STITCH_HAPLOTYPES])
+    v199([SAMPLE_REPORT])
+    v202([EMIT_FAILURE_FLAG])
+    v224([MULTIQC])
+    v230([RENDER_RUN_SUMMARY])
+    v235([DUMP_SOFTWARE_VERSIONS])
+    v3(( ))
+    v7(( ))
+    v13(( ))
+    v22(( ))
+    v128(( ))
+    v157(( ))
+    v173(( ))
+    v205(( ))
+    v223(( ))
+    v228(( ))
+    end
+    subgraph " "
+    v11[" "]
+    v24[" "]
+    v56[" "]
+    v85[" "]
+    v95["low_cov_sentinel"]
+    v103[" "]
+    v118[" "]
+    v119[" "]
+    v147[" "]
+    v148[" "]
+    v165[" "]
+    v168[" "]
+    v171[" "]
+    v200[" "]
+    v203[" "]
+    v225[" "]
+    v226[" "]
+    v231[" "]
+    v232[" "]
+    v236[" "]
+    end
+    v1 --> v2
+    v2 --> v3
+    v3 --> v4
+    v4 --> v7
+    v4 --> v173
+    v4 --> v205
+    v3 --> v5
+    v5 --> v7
+    v5 --> v173
+    v5 --> v205
+    v3 --> v10
+    v10 --> v11
+    v10 --> v7
+    v10 --> v13
+    v13 --> v17
+    v17 --> v7
+    v17 --> v173
+    v17 --> v205
+    v19 --> v20
+    v20 --> v7
+    v20 --> v22
+    v13 --> v23
+    v22 --> v23
+    v23 --> v26
+    v23 --> v24
+    v23 --> v32
+    v23 --> v7
+    v23 --> v13
+    v23 --> v173
+    v26 --> v7
+    v26 --> v205
+    v28 --> v29
+    v29 --> v7
+    v29 --> v13
+    v13 --> v32
+    v32 --> v7
+    v32 --> v13
+    v32 --> v205
+    v13 --> v38
+    v38 --> v7
+    v38 --> v13
+    v38 --> v173
+    v13 --> v55
+    v55 --> v56
+    v55 --> v7
+    v55 --> v13
+    v13 --> v73
+    v73 --> v7
+    v73 --> v13
+    v13 --> v79
+    v79 --> v87
+    v79 --> v7
+    v79 --> v13
+    v13 --> v84
+    v84 --> v85
+    v84 --> v7
+    v84 --> v13
+    v87 --> v7
+    v87 --> v13
+    v13 --> v94
+    v94 --> v95
+    v94 --> v7
+    v94 --> v13
+    v94 --> v128
+    v94 --> v157
+    v13 --> v102
+    v102 --> v105
+    v102 --> v103
+    v102 --> v7
+    v102 --> v173
+    v102 --> v205
+    v105 --> v7
+    v105 --> v157
+    v105 --> v173
+    v105 --> v205
+    v13 --> v111
+    v111 --> v7
+    v111 --> v13
+    v13 --> v117
+    v117 --> v119
+    v117 --> v118
+    v117 --> v7
+    v117 --> v13
+    v13 --> v125
+    v125 --> v7
+    v125 --> v128
+    v128 --> v132
+    v132 --> v134
+    v132 --> v7
+    v134 --> v7
+    v134 --> v157
+    v134 --> v173
+    v13 --> v140
+    v140 --> v7
+    v140 --> v13
+    v13 --> v146
+    v146 --> v148
+    v146 --> v147
+    v146 --> v7
+    v146 --> v13
+    v13 --> v154
+    v154 --> v7
+    v154 --> v157
+    v157 --> v165
+    v157 --> v167
+    v167 --> v170
+    v167 --> v168
+    v167 --> v7
+    v170 --> v171
+    v170 --> v7
+    v170 --> v173
+    v173 --> v199
+    v199 --> v200
+    v199 --> v7
+    v199 --> v228
+    v13 --> v202
+    v202 --> v203
+    v221 --> v223
+    v205 --> v224
+    v223 --> v224
+    v224 --> v226
+    v224 --> v225
+    v224 --> v7
+    v228 --> v230
+    v230 --> v232
+    v230 --> v231
+    v7 --> v235
+    v235 --> v236
+
+</pre>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, maxTextSize: Number.MAX_SAFE_INTEGER, maxEdges: Number.MAX_SAFE_INTEGER });
+</script>
+</body>
+</html>

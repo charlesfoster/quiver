@@ -1,0 +1,716 @@
+/*
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    hcv-quasi — Top-level workflow (Prompt 24).
+
+    Wiring overview (see CLAUDE.md Section 2 for the ASCII diagram and
+    docs/data_flow.md for the per-step rationale):
+
+        INPUT_CHECK
+            -> RAW_QC (NanoPlot + nanoq) ─── parallel branch
+            -> CHOPPER  (read filter)
+            -> NANOQ_FILT (post-filter QC)
+            -> HOST_DEPLETE_{MINIMAP2|HOSTILE}
+            -> NANOQ_POSTHOST
+            -> INDEX_PANEL (singleton)
+            -> MINIMAP2_ROUND1
+            -> GENOTYPE_CLASSIFY
+            -> GENOTYPE_BRANCH ─── fan-out one item per [sample × genotype]
+                |
+                |   (per-branch, branch_meta = meta + [genotype: gt])
+                v
+                BUILD_CONSENSUS
+                    -> MINIMAP2_ROUND2 (full-depth)
+                    -> MOSDEPTH
+                    -> PREP_LOFREQ_INPUT
+                        -> LOFREQ_CALL -> VARIANT_FILTER
+                        -> (optional) CLAIR3 + concordance
+                    -> PREP_DEVIDER_INPUT
+                        -> DEVIDER (gated by LOW_COVERAGE)
+                        -> STITCH_HAPLOTYPES
+                |
+                v
+            groupTuple(by: 0) on meta.id  ── per-sample collapse
+                -> SAMPLE_REPORT
+            collect QC across all samples + branches
+                -> MULTIQC
+                -> RENDER_RUN_SUMMARY
+
+    Failure-mode routing (architecture_reasoning.md §12):
+        EMPTY_INPUT             — INPUT_CHECK errors before workflow proceeds.
+        ALL_READS_FILTERED      — CHOPPER sentinel; sample short-circuits to flag.
+        NO_VIRAL_READS_LIKELY   — HOST_DEPLETE sentinel; warning, pipeline continues.
+        NO_HCV_DETECTED         — MINIMAP2_ROUND1 / GENOTYPE_BRANCH; sample routed
+                                  to no_hcv channel, no downstream processing.
+        LOW_COVERAGE            — MOSDEPTH sentinel; skip DEVIDER for that branch
+                                  but keep LoFreq.  Flag passed to SAMPLE_REPORT.
+        LOW_COVERAGE_CONSENSUS  — APPLY_CONSENSUS sentinel; downstream continues,
+                                  flag passed to SAMPLE_REPORT.
+        devider.failed          — DEVIDER process; STITCH_HAPLOTYPES degrades
+                                  gracefully (empty FASTA + fallback JSON).
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+*/
+
+// ---------------------------------------------------------------------------
+// Module / subworkflow includes
+// ---------------------------------------------------------------------------
+
+include { INPUT_CHECK              } from '../modules/local/input_check'
+include { RAW_QC                   } from '../subworkflows/local/raw_qc'
+include { CHOPPER                  } from '../modules/local/chopper'
+include { NANOQ as NANOQ_FILT      } from '../modules/local/nanoq'
+include { NANOQ as NANOQ_POSTHOST  } from '../modules/local/nanoq'
+include { INDEX_HOST               } from '../modules/local/index_host'
+include { HOST_DEPLETE_MINIMAP2    } from '../modules/local/host_deplete'
+include { HOST_DEPLETE_HOSTILE     } from '../modules/local/host_deplete'
+include { INDEX_PANEL              } from '../modules/local/index_panel'
+include { MINIMAP2_ROUND1          } from '../modules/local/minimap2_round1'
+include { GENOTYPE_CLASSIFY        } from '../modules/local/genotype_classify'
+include { GENOTYPE_BRANCH          } from '../subworkflows/local/genotype_branch'
+include { BUILD_CONSENSUS          } from '../subworkflows/local/build_consensus'
+include { MINIMAP2_ROUND2          } from '../modules/local/minimap2_round2'
+include { MOSDEPTH                 } from '../modules/local/mosdepth'
+include { PREP_LOFREQ_INPUT        } from '../subworkflows/local/prep_lofreq_input'
+include { LOFREQ_CALL              } from '../modules/local/lofreq_call'
+include { VARIANT_FILTER           } from '../modules/local/variant_filter'
+include { CLAIR3                   } from '../modules/local/clair3'
+include { PREP_DEVIDER_INPUT       } from '../subworkflows/local/prep_devider_input'
+include { DEVIDER                  } from '../modules/local/devider'
+include { STITCH_HAPLOTYPES        } from '../modules/local/stitch_haplotypes'
+include { MAKE_ROUND2_MASK;
+          BUILD_ROUND2_CONSENSUS   } from '../modules/local/build_round2_consensus'
+include { SAMPLE_REPORT            } from '../modules/local/sample_report'
+include { MULTIQC                  } from '../modules/local/multiqc'
+
+
+// ---------------------------------------------------------------------------
+// Local helper processes — scoped to this workflow
+// ---------------------------------------------------------------------------
+
+/*
+    DUMP_SOFTWARE_VERSIONS — collect all per-process versions.yml fragments
+    into a single software_versions.yml under the run pipeline_info directory.
+
+    Each module emits a YAML fragment of the form:
+        "<task.process>":
+            tool: version
+    We concatenate them verbatim (no deduplication needed; Nextflow already
+    caches and resumes by content hash, so re-runs of the same process emit
+    the same fragment).
+*/
+process DUMP_SOFTWARE_VERSIONS {
+
+    label 'process_low'
+
+    tag 'software_versions'
+
+    container 'python:3.11-slim'
+    conda 'conda-forge::python=3.11'
+
+    publishDir (
+        path: "${params.outdir}/pipeline_info/",
+        mode: 'copy'
+    )
+
+    input:
+    // Stage each input file under a unique name to avoid the
+    // "input file name collision" error — every module emits
+    // a file literally called `versions.yml`.
+    path versions_yamls, stageAs: "versions_*/versions.yml"
+
+    output:
+    path "software_versions.yml"
+
+    script:
+    """
+    {
+        echo "# hcv-quasi software versions"
+        echo "# pipeline_version: ${workflow.manifest.version ?: 'unknown'}"
+        echo "# nextflow_version: ${nextflow.version}"
+        echo "# run_date: \$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo
+        for f in versions_*/versions.yml; do
+            cat "\$f"
+            echo
+        done
+    } > software_versions.yml
+    """
+
+    stub:
+    """
+    echo "# stub software versions" > software_versions.yml
+    """
+}
+
+/*
+    RENDER_RUN_SUMMARY — run-level HTML + JSON aggregation of per-sample summaries.
+
+    Wraps bin/render_run_summary.py.  Receives the collected list of per-sample
+    *_summary.json files; emits run_summary.html and run_summary.json under
+    ${params.outdir}/reports/.
+*/
+process RENDER_RUN_SUMMARY {
+
+    label 'process_low'
+
+    tag 'run_summary'
+
+    container 'python:3.11-slim'
+    conda 'conda-forge::python=3.11 conda-forge::jinja2'
+
+    publishDir (
+        path: "${params.outdir}/reports/",
+        mode: 'copy'
+    )
+
+    input:
+    path sample_jsons
+
+    output:
+    path "run_summary.html"
+    path "run_summary.json"
+
+    script:
+    """
+    pip install --quiet jinja2 2>&1 | grep -v "^Requirement already" || true
+
+    python3 ${projectDir}/bin/render_run_summary.py \\
+        --sample-jsons ${sample_jsons} \\
+        --output-html run_summary.html \\
+        --output-json run_summary.json \\
+        --pipeline-version "${workflow.manifest.version ?: 'hcv-quasi'}"
+    """
+
+    stub:
+    """
+    echo "<html><body>Stub run summary</body></html>" > run_summary.html
+    echo '{"run":"stub"}' > run_summary.json
+    """
+}
+
+/*
+    EMIT_FAILURE_FLAG — produce a published flag file for samples that hit a
+    pipeline-terminating sentinel (NO_HCV_DETECTED, ALL_READS_FILTERED, etc.).
+
+    The flag file lives under ${params.outdir}/${meta.id}/ so analysts can see
+    at a glance why a sample was short-circuited.
+*/
+process EMIT_FAILURE_FLAG {
+
+    label 'process_low'
+
+    tag "${meta.id}"
+
+    container 'python:3.11-slim'
+    conda 'conda-forge::python=3.11'
+
+    publishDir (
+        path: { "${params.outdir}/${meta.id}/" },
+        mode: 'copy'
+    )
+
+    input:
+    tuple val(meta), val(reason)
+
+    output:
+    tuple val(meta), path("${meta.id}.PIPELINE_FLAG.txt"), emit: flag
+
+    script:
+    """
+    {
+        echo "Pipeline status flag: ${reason}"
+        echo "Sample: ${meta.id}"
+        echo "Timestamp: \$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo
+        echo "This sample was short-circuited by the hcv-quasi pipeline."
+        echo "See ${params.outdir}/${meta.id}/ for the upstream sentinel file."
+    } > ${meta.id}.PIPELINE_FLAG.txt
+    """
+
+    stub:
+    """
+    echo "Sample: ${meta.id}" > ${meta.id}.PIPELINE_FLAG.txt
+    echo "Reason: ${reason}" >> ${meta.id}.PIPELINE_FLAG.txt
+    """
+}
+
+
+// ===========================================================================
+//                              MAIN WORKFLOW
+// ===========================================================================
+
+workflow HCV_QUASI {
+
+    // ---------------------------------------------------------------------
+    // Master version channel — every module appends its versions.yml here.
+    // Aggregated at the end via DUMP_SOFTWARE_VERSIONS.
+    // ---------------------------------------------------------------------
+    ch_versions = Channel.empty()
+
+
+    // =====================================================================
+    // Step 5.1 — INPUT_CHECK
+    // =====================================================================
+    ch_samplesheet = Channel.fromPath(params.input, checkIfExists: true)
+    INPUT_CHECK(ch_samplesheet)
+
+    // The python validator writes a JSON array of {sample_id, fastq, metadata}
+    // records.  Parse it back into a per-sample channel of [meta, fastq].
+    ch_reads = INPUT_CHECK.out.json
+        .flatMap { json_path ->
+            // json_path is a java.nio Path; JsonSlurper.parse accepts an
+            // InputStream or a Reader.  Use newReader() (a Path method) to
+            // hand it a Reader without needing a File cast.
+            def records = new groovy.json.JsonSlurper().parse(json_path.newReader())
+            records.collect { rec ->
+                def meta = [
+                    id:       rec.sample_id as String,
+                    metadata: rec.metadata ?: [:],
+                ]
+                tuple(meta, file(rec.fastq as String, checkIfExists: true))
+            }
+        }
+
+
+    // =====================================================================
+    // Step 5.2 — RAW_QC (NanoPlot + nanoq, parallel)
+    // =====================================================================
+    RAW_QC(ch_reads)
+    ch_versions = ch_versions.mix(RAW_QC.out.versions)
+
+
+    // =====================================================================
+    // Step 5.3 — CHOPPER read filtering
+    // =====================================================================
+    CHOPPER(ch_reads)
+    ch_versions = ch_versions.mix(CHOPPER.out.versions)
+
+    // Samples whose filter sentinel fired short-circuit here.  We gate on the
+    // absence of an ALL_READS_FILTERED file by joining the reads channel with
+    // the sentinel channel (left-outer join semantics via `.join(..., remainder: true)`)
+    // and routing accordingly.
+    ch_filtered_routed = CHOPPER.out.reads
+        .join(CHOPPER.out.sentinel, by: 0, remainder: true)
+        .branch { meta, reads, sentinel ->
+            // sentinel is null when the optional emit did not produce a file
+            filtered:    sentinel == null
+            all_filtered: true
+        }
+
+    ch_post_filter_reads = ch_filtered_routed.filtered.map { meta, reads, sentinel -> tuple(meta, reads) }
+
+    // Emit a published PIPELINE_FLAG for ALL_READS_FILTERED samples.
+    ch_all_filtered_failed = ch_filtered_routed.all_filtered.map { meta, reads, sentinel ->
+        tuple(meta, 'ALL_READS_FILTERED')
+    }
+
+
+    // =====================================================================
+    // Step 5.3b — post-filter nanoq (re-uses the NANOQ process, distinct name)
+    // =====================================================================
+    NANOQ_FILT(ch_post_filter_reads)
+    ch_versions = ch_versions.mix(NANOQ_FILT.out.versions)
+
+
+    // =====================================================================
+    // Step 5.4 — HOST_DEPLETE (minimap2 or hostile)
+    // =====================================================================
+    if (params.host_reference) {
+        ch_host_input = Channel.fromPath(params.host_reference, checkIfExists: true)
+
+        if (params.use_hostile) {
+            // hostile expects a directory of index files; pass through as-is.
+            HOST_DEPLETE_HOSTILE(ch_post_filter_reads, ch_host_input.first())
+            ch_versions       = ch_versions.mix(HOST_DEPLETE_HOSTILE.out.versions)
+            ch_hostdep_reads  = HOST_DEPLETE_HOSTILE.out.reads
+            ch_host_stats     = HOST_DEPLETE_HOSTILE.out.stats_json
+        } else {
+            // minimap2 strategy: build the .mmi via INDEX_HOST (skipped by
+            // Nextflow caching when the FASTA hash matches a previous run).
+            INDEX_HOST(ch_host_input)
+            ch_versions       = ch_versions.mix(INDEX_HOST.out.versions)
+            HOST_DEPLETE_MINIMAP2(ch_post_filter_reads, INDEX_HOST.out.index.first())
+            ch_versions       = ch_versions.mix(HOST_DEPLETE_MINIMAP2.out.versions)
+            ch_hostdep_reads  = HOST_DEPLETE_MINIMAP2.out.reads
+            ch_host_stats     = HOST_DEPLETE_MINIMAP2.out.stats_json
+        }
+    } else {
+        // No host_reference supplied: skip depletion, pass reads through.
+        // Synthesize an empty-shape host_stats channel so downstream report
+        // joins still emit at least once per sample.
+        log.warn "No --host_reference supplied; skipping host depletion. Provide --host_reference for production runs."
+        ch_hostdep_reads = ch_post_filter_reads
+        ch_host_stats    = Channel.empty()
+    }
+
+
+    // =====================================================================
+    // Step 5.5 — Post-host nanoq
+    // =====================================================================
+    NANOQ_POSTHOST(ch_hostdep_reads)
+    ch_versions = ch_versions.mix(NANOQ_POSTHOST.out.versions)
+
+
+    // =====================================================================
+    // Step 5.6 — INDEX_PANEL (singleton; cached per run)
+    // =====================================================================
+    ch_panel_fasta = Channel.fromPath(params.reference_panel, checkIfExists: true)
+    INDEX_PANEL(ch_panel_fasta)
+    ch_versions = ch_versions.mix(INDEX_PANEL.out.versions)
+
+    // Materialise as singleton so it can be `.combine`d / `.first`d into
+    // per-sample and per-branch streams without duplicate emission.
+    ch_panel = INDEX_PANEL.out.index.first()
+
+
+    // =====================================================================
+    // Step 5.7 — MINIMAP2_ROUND1 competitive mapping
+    // =====================================================================
+    MINIMAP2_ROUND1(ch_hostdep_reads, ch_panel)
+    ch_versions = ch_versions.mix(MINIMAP2_ROUND1.out.versions)
+
+    // Route samples that triggered NO_HCV_DETECTED away from downstream
+    // processing.  Use a left-outer join with the optional sentinel channel.
+    ch_r1_routed = MINIMAP2_ROUND1.out.bam
+        .join(MINIMAP2_ROUND1.out.sentinel, by: 0, remainder: true)
+        .branch { meta, bam, bai, sentinel ->
+            no_hcv:      sentinel != null
+            processable: true
+        }
+
+    ch_round1_bam  = ch_r1_routed.processable.map { meta, bam, bai, sentinel -> tuple(meta, bam, bai) }
+    ch_no_hcv_r1   = ch_r1_routed.no_hcv.map      { meta, bam, bai, sentinel -> tuple(meta, 'NO_HCV_DETECTED') }
+
+
+    // =====================================================================
+    // Step 5.8 — GENOTYPE_CLASSIFY
+    // =====================================================================
+    GENOTYPE_CLASSIFY(ch_round1_bam)
+    ch_versions = ch_versions.mix(GENOTYPE_CLASSIFY.out.versions)
+
+
+    // =====================================================================
+    // Steps 5.9–5.10 — GENOTYPE_BRANCH fan-out
+    // =====================================================================
+    GENOTYPE_BRANCH(
+        ch_hostdep_reads,
+        GENOTYPE_CLASSIFY.out.summary,
+        ch_round1_bam,
+        GENOTYPE_CLASSIFY.out.assignments,
+    )
+    ch_versions = ch_versions.mix(GENOTYPE_BRANCH.out.versions)
+
+    ch_branches  = GENOTYPE_BRANCH.out.branches    // [branch_meta, reads, dom_ref_id]
+    ch_no_hcv_gb = GENOTYPE_BRANCH.out.no_hcv.map  { meta -> tuple(meta, 'NO_HCV_DETECTED') }
+
+    // Union all NO_HCV channels; downstream EMIT_FAILURE_FLAG publishes a
+    // status file per sample.
+    ch_failed_samples = Channel.empty()
+        .mix(ch_no_hcv_r1)
+        .mix(ch_no_hcv_gb)
+        .mix(ch_all_filtered_failed)
+
+
+    // =====================================================================
+    // Step 5.10 — BUILD_CONSENSUS (per branch)
+    // =====================================================================
+    BUILD_CONSENSUS(ch_branches, ch_panel)
+    ch_versions = ch_versions.mix(BUILD_CONSENSUS.out.versions)
+
+
+    // =====================================================================
+    // Step 5.11 — MINIMAP2_ROUND2 (full-depth per branch)
+    //
+    // Join the per-branch consensus with the per-branch reads, both keyed by
+    // [meta.id, meta.genotype].
+    // =====================================================================
+    ch_consensus = BUILD_CONSENSUS.out.consensus
+        .map { meta, fasta, fai, mmi -> tuple([meta.id, meta.genotype], meta, fasta, fai, mmi) }
+
+    ch_branch_reads_keyed = ch_branches
+        .map { meta, reads, dom_ref -> tuple([meta.id, meta.genotype], reads) }
+
+    ch_round2_input = ch_consensus
+        .join(ch_branch_reads_keyed, by: 0)
+        .map { key, meta, fasta, fai, mmi, reads ->
+            tuple(meta, fasta, fai, mmi, reads)
+        }
+
+    MINIMAP2_ROUND2(ch_round2_input)
+    ch_versions = ch_versions.mix(MINIMAP2_ROUND2.out.versions)
+
+
+    // =====================================================================
+    // Step 5.13 — MOSDEPTH (coverage QC on full-depth round 2)
+    // =====================================================================
+    MOSDEPTH(MINIMAP2_ROUND2.out.bam)
+    ch_versions = ch_versions.mix(MOSDEPTH.out.versions)
+
+
+    // =====================================================================
+    // Steps 5.14–5.16 — LoFreq prep / call / filter
+    //
+    // PREP_LOFREQ_INPUT expects: [meta, reads, consensus_fasta, fai, mmi]
+    // Build that tuple by joining per-branch reads with the consensus channel.
+    // =====================================================================
+    ch_prep_lofreq_input = ch_consensus
+        .join(ch_branch_reads_keyed, by: 0)
+        .map { key, meta, fasta, fai, mmi, reads ->
+            tuple(meta, reads, fasta, fai, mmi)
+        }
+
+    PREP_LOFREQ_INPUT(ch_prep_lofreq_input)
+    ch_versions = ch_versions.mix(PREP_LOFREQ_INPUT.out.versions)
+
+    // LoFreq input: [meta, bam, bai, ref_fasta]
+    ch_lofreq_bam_keyed = PREP_LOFREQ_INPUT.out.lofreq_bam
+        .map { meta, bam, bai -> tuple([meta.id, meta.genotype], meta, bam, bai) }
+
+    ch_consensus_fasta_only = BUILD_CONSENSUS.out.consensus
+        .map { meta, fasta, fai, mmi -> tuple([meta.id, meta.genotype], fasta) }
+
+    ch_lofreq_call_input = ch_lofreq_bam_keyed
+        .join(ch_consensus_fasta_only, by: 0)
+        .map { key, meta, bam, bai, fasta -> tuple(meta, bam, bai, fasta) }
+
+    LOFREQ_CALL(ch_lofreq_call_input)
+    ch_versions = ch_versions.mix(LOFREQ_CALL.out.versions)
+
+    VARIANT_FILTER(LOFREQ_CALL.out.vcf)
+    ch_versions = ch_versions.mix(VARIANT_FILTER.out.versions)
+
+
+    // =====================================================================
+    // Step 5.16b — Round 2 consensus (published output only)
+    //
+    // Uses the full-depth Round 2 BAM for coverage masking and the LoFreq
+    // filtered VCF to generate two consensus FASTAs per branch:
+    //   *_round2_consensus_simple.fasta — majority-allele (AF >= 0.5)
+    //   *_round2_consensus_iupac.fasta  — IUPAC codes at AF < 0.5 sites
+    // These are published under consensus/${GT}/ and do not feed back
+    // into any downstream pipeline step.
+    // =====================================================================
+    MAKE_ROUND2_MASK(MINIMAP2_ROUND2.out.bam)
+    ch_versions = ch_versions.mix(MAKE_ROUND2_MASK.out.versions)
+
+    // Join: [meta, vcf, tbi] + [meta, fasta, fai] + [meta, mask_bed]
+    // keyed by [meta.id, meta.genotype]
+    ch_r2cons_vcf  = VARIANT_FILTER.out.vcf
+        .map { meta, vcf, tbi -> tuple([meta.id, meta.genotype], meta, vcf, tbi) }
+    ch_r2cons_ref  = BUILD_CONSENSUS.out.consensus
+        .map { meta, fasta, fai, mmi -> tuple([meta.id, meta.genotype], fasta, fai) }
+    ch_r2cons_mask = MAKE_ROUND2_MASK.out.mask_bed
+        .map { meta, bed -> tuple([meta.id, meta.genotype], bed) }
+
+    ch_r2cons_input = ch_r2cons_vcf
+        .join(ch_r2cons_ref,  by: 0)
+        .join(ch_r2cons_mask, by: 0)
+        .map { key, meta, vcf, tbi, fasta, fai, bed ->
+            tuple(meta, vcf, tbi, fasta, fai, bed)
+        }
+
+    BUILD_ROUND2_CONSENSUS(ch_r2cons_input)
+    ch_versions = ch_versions.mix(BUILD_ROUND2_CONSENSUS.out.versions)
+
+
+    // =====================================================================
+    // Step 5.17 — Optional CLAIR3 corroboration
+    // =====================================================================
+    ch_clair3_vcf = Channel.empty()
+    if (params.run_clair3) {
+        // CLAIR3 expects: [meta, bam, bai, ref_fasta, ref_fai]
+        ch_consensus_fasta_fai = BUILD_CONSENSUS.out.consensus
+            .map { meta, fasta, fai, mmi -> tuple([meta.id, meta.genotype], fasta, fai) }
+
+        ch_clair3_input = ch_lofreq_bam_keyed
+            .join(ch_consensus_fasta_fai, by: 0)
+            .map { key, meta, bam, bai, fasta, fai -> tuple(meta, bam, bai, fasta, fai) }
+
+        CLAIR3(ch_clair3_input)
+        ch_versions   = ch_versions.mix(CLAIR3.out.versions)
+        ch_clair3_vcf = CLAIR3.out.vcf
+    }
+
+
+    // =====================================================================
+    // Steps 5.18–5.20 — DEVIDER prep, run, stitch
+    //
+    // LOW_COVERAGE branches skip DEVIDER but keep LoFreq.
+    // =====================================================================
+    PREP_DEVIDER_INPUT(ch_prep_lofreq_input)  // same input shape as LoFreq prep
+    ch_versions = ch_versions.mix(PREP_DEVIDER_INPUT.out.versions)
+
+    // Build DEVIDER input: [meta, bam, bai, vcf, tbi, ref_fasta], but only for
+    // branches that did NOT trigger LOW_COVERAGE in MOSDEPTH.
+    ch_devider_bam_keyed = PREP_DEVIDER_INPUT.out.devider_bam
+        .map { meta, bam, bai -> tuple([meta.id, meta.genotype], meta, bam, bai) }
+
+    ch_filtered_vcf_keyed = VARIANT_FILTER.out.vcf
+        .map { meta, vcf, tbi -> tuple([meta.id, meta.genotype], vcf, tbi) }
+
+    ch_consensus_for_devider = BUILD_CONSENSUS.out.consensus
+        .map { meta, fasta, fai, mmi -> tuple([meta.id, meta.genotype], fasta) }
+
+    // Optional-emit LOW_COVERAGE flags from MOSDEPTH; key by [id, genotype].
+    ch_low_cov_keyed = MOSDEPTH.out.low_cov_flag
+        .map { meta, flag -> tuple([meta.id, meta.genotype], flag) }
+
+    // Left-outer join with low-cov flag, then branch on its presence.
+    ch_devider_assembled = ch_devider_bam_keyed
+        .join(ch_filtered_vcf_keyed, by: 0)
+        .join(ch_consensus_for_devider, by: 0)
+        .join(ch_low_cov_keyed, by: 0, remainder: true)
+        .branch { key, meta, bam, bai, vcf, tbi, fasta, low_cov ->
+            adequate:    low_cov == null
+            low_coverage: true
+        }
+
+    ch_devider_run_input = ch_devider_assembled.adequate
+        .map { key, meta, bam, bai, vcf, tbi, fasta, low_cov ->
+            tuple(meta, bam, bai, vcf, tbi, fasta)
+        }
+
+    DEVIDER(ch_devider_run_input)
+    ch_versions = ch_versions.mix(DEVIDER.out.versions)
+
+    STITCH_HAPLOTYPES(DEVIDER.out.outdir)
+    ch_versions = ch_versions.mix(STITCH_HAPLOTYPES.out.versions)
+
+
+    // =====================================================================
+    // Step 5.21 — SAMPLE_REPORT (per sample, collapse all branches)
+    //
+    // Collapse per-branch outputs back to per-sample tuples keyed by meta.id.
+    // The SAMPLE_REPORT process declares all per-branch inputs as `path` —
+    // Nextflow will stage them as a flat list in the work directory.  We
+    // pass each list-of-paths as a single channel item per sample.
+    // =====================================================================
+
+    // Collapse per-branch [meta, file] channels into per-sample
+    // [sample_id, [files...]] using groupTuple.  Branches with no output
+    // (e.g. STITCH for low-cov samples that skipped DEVIDER) are absent
+    // from the channel — groupTuple still emits at least one item per
+    // sample as long as at least one branch contributed.
+    ch_mosdepth_by_sample = MOSDEPTH.out.summary
+        .map { meta, f -> tuple(meta.id, f) }
+        .groupTuple(by: 0)
+
+    ch_variants_by_sample = VARIANT_FILTER.out.tsv
+        .map { meta, f -> tuple(meta.id, f) }
+        .groupTuple(by: 0)
+
+    ch_flagstat_by_sample = MINIMAP2_ROUND2.out.flagstat
+        .map { meta, f -> tuple(meta.id, f) }
+        .groupTuple(by: 0)
+
+    ch_stitch_by_sample = STITCH_HAPLOTYPES.out.report
+        .map { meta, f -> tuple(meta.id, f) }
+        .groupTuple(by: 0)
+
+    ch_nanoplot_by_sample = RAW_QC.out.nanoplot_dirs
+        .map { meta, f -> tuple(meta.id, f) }
+        .groupTuple(by: 0)
+
+    // Per-sample (not per-branch) channels: genotype summary, nanoq, host stats.
+    ch_summary_by_sample   = GENOTYPE_CLASSIFY.out.summary.map { meta, j -> tuple(meta.id, j) }
+    ch_nanoq_raw_by_sample = RAW_QC.out.nanoq_jsons.map         { meta, j -> tuple(meta.id, j) }
+    ch_nanoq_filt_by_sample= NANOQ_FILT.out.json.map            { meta, j -> tuple(meta.id, j) }
+    ch_host_stats_by_sample= ch_host_stats.map                  { meta, j -> tuple(meta.id, j) }
+
+    // Recover meta from the genotype_summary channel — guaranteed one per sample.
+    ch_meta_keyed = GENOTYPE_CLASSIFY.out.summary.map { meta, j -> tuple(meta.id, meta) }
+
+    // Samples short-circuited before genotype classify (NO_HCV / ALL_READS_FILTERED)
+    // are NOT joined into the SAMPLE_REPORT input — they have no genotype summary
+    // to render against.  Instead they are routed to EMIT_FAILURE_FLAG below,
+    // which publishes a PIPELINE_FLAG.txt under ${params.outdir}/${meta.id}/.
+
+    // We use `.join(..., remainder: true)` extensively so that branches that
+    // produced no output (e.g. low_cov samples that skipped DEVIDER, or
+    // missing host_stats when --host_reference is not set) still appear as
+    // null in the report inputs — the SAMPLE_REPORT process handles null
+    // (empty) inputs gracefully via its optional-path declarations.
+    //
+    // Join order matters: start with the meta channel and add columns one at
+    // a time, keying always by sample_id.
+    ch_report_input = ch_meta_keyed
+        .join(ch_summary_by_sample,    by: 0, remainder: true)
+        .join(ch_nanoq_raw_by_sample,  by: 0, remainder: true)
+        .join(ch_nanoq_filt_by_sample, by: 0, remainder: true)
+        .join(ch_host_stats_by_sample, by: 0, remainder: true)
+        .join(ch_mosdepth_by_sample,   by: 0, remainder: true)
+        .join(ch_variants_by_sample,   by: 0, remainder: true)
+        .join(ch_flagstat_by_sample,   by: 0, remainder: true)
+        .join(ch_stitch_by_sample,     by: 0, remainder: true)
+        .join(ch_nanoplot_by_sample,   by: 0, remainder: true)
+        .map { sid, meta, summary, nanoq_raw, nanoq_filt, host_stats,
+               mosdepth_files, variant_tsvs, flagstat_files,
+               stitch_reports, nanoplot_dirs ->
+            tuple(
+                meta,
+                summary       ?: [],
+                nanoq_raw     ?: [],
+                nanoq_filt    ?: [],
+                host_stats    ?: [],
+                mosdepth_files ?: [],
+                variant_tsvs   ?: [],
+                flagstat_files ?: [],
+                stitch_reports ?: [],
+                nanoplot_dirs  ?: [],
+                []  // flag_files placeholder — sentinels published separately
+            )
+        }
+        // Drop samples with no genotype summary (NO_HCV_DETECTED short-circuits).
+        // Those samples get a PIPELINE_FLAG.txt via EMIT_FAILURE_FLAG instead.
+        .filter { meta, summary, _na, _nf, _hs, _md, _vt, _fs, _sr, _np, _ff ->
+            summary != null && !(summary instanceof List && summary.isEmpty())
+        }
+
+    SAMPLE_REPORT(ch_report_input)
+    ch_versions = ch_versions.mix(SAMPLE_REPORT.out.versions)
+
+
+    // =====================================================================
+    // EMIT_FAILURE_FLAG — publish a one-line status file for short-circuited
+    // samples.  These samples still appear in MultiQC via their raw-QC outputs.
+    // =====================================================================
+    EMIT_FAILURE_FLAG(ch_failed_samples)
+
+
+    // =====================================================================
+    // Step 5.22 — MULTIQC aggregation across all samples + branches
+    //
+    // Collect every QC file we want MultiQC to parse, into a single flat
+    // channel, then `.collect()` to gate the process on all upstream
+    // completions.
+    // =====================================================================
+    ch_multiqc_files = Channel.empty()
+        .mix(RAW_QC.out.nanoplot_dirs.map        { meta, d -> d })
+        .mix(RAW_QC.out.nanoq_jsons.map          { meta, j -> j })
+        .mix(NANOQ_FILT.out.json.map             { meta, j -> j })
+        .mix(NANOQ_POSTHOST.out.json.map         { meta, j -> j })
+        .mix(MINIMAP2_ROUND1.out.flagstat.map    { meta, f -> f })
+        .mix(MINIMAP2_ROUND2.out.flagstat.map    { meta, f -> f })
+        .mix(MOSDEPTH.out.summary.map            { meta, f -> f })
+        .mix(MOSDEPTH.out.regions.map            { meta, f -> f })
+
+    ch_multiqc_config = Channel.fromPath(
+        "${projectDir}/assets/multiqc_config.yml",
+        checkIfExists: true,
+    )
+
+    MULTIQC(ch_multiqc_files.collect(), ch_multiqc_config.first())
+    ch_versions = ch_versions.mix(MULTIQC.out.versions)
+
+
+    // =====================================================================
+    // Run summary — collect all per-sample JSON files and render HTML/JSON.
+    // =====================================================================
+    RENDER_RUN_SUMMARY(SAMPLE_REPORT.out.json.map { meta, j -> j }.collect())
+
+
+    // =====================================================================
+    // Software versions — collect every versions.yml fragment into a single
+    // published manifest.
+    // =====================================================================
+    DUMP_SOFTWARE_VERSIONS(ch_versions.unique().collect())
+}

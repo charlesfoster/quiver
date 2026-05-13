@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hcv-quasi | {{ sample_id }} Summary</title>
+<style>
+/* -----------------------------------------------------------------------
+   hcv-quasi per-sample report — self-contained HTML, inline CSS only.
+   No external dependencies: opens in a browser without network access.
+   ----------------------------------------------------------------------- */
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                 Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #1a1a2e;
+    background: #f5f5f5;
+    margin: 0;
+    padding: 0;
+}
+
+.page-wrapper {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px 16px 48px;
+}
+
+/* ---- Header ---- */
+.report-header {
+    background: #1a1a2e;
+    color: #e8e8f0;
+    padding: 24px 32px 20px;
+    border-radius: 8px 8px 0 0;
+    margin-bottom: 0;
+}
+.report-header h1 {
+    margin: 0 0 6px;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+}
+.report-header .meta-line {
+    font-size: 12px;
+    color: #a0a0c0;
+}
+.report-header .meta-line span { margin-right: 18px; }
+
+/* ---- Status banner ---- */
+.status-banner {
+    padding: 12px 32px;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    border-radius: 0;
+}
+.status-PASS         { background: #2d6a4f; color: #d8f3dc; }
+.status-MIXED        { background: #b5451b; color: #fde8dc; }
+.status-NO_HCV       { background: #6b2737; color: #f8d7da; }
+.status-LOW_COVERAGE { background: #7b5e0a; color: #fff3cd; }
+.status-UNKNOWN      { background: #3d3d3d; color: #e0e0e0; }
+
+/* ---- Main sections ---- */
+.section {
+    background: #ffffff;
+    border: 1px solid #dde1ea;
+    border-radius: 0;
+    margin-bottom: 2px;
+    padding: 20px 24px;
+}
+.section:last-child { border-radius: 0 0 8px 8px; margin-bottom: 0; }
+.section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin: 0 0 14px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #e8e8f0;
+}
+
+/* ---- Tables ---- */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin: 0;
+}
+th {
+    background: #f0f2f8;
+    font-weight: 600;
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 2px solid #c8cce0;
+    color: #2a2a4e;
+}
+td {
+    padding: 7px 10px;
+    border-bottom: 1px solid #e8eaf2;
+    vertical-align: middle;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: #f8f9ff; }
+
+/* ---- Funnel table ---- */
+.funnel-pct-low  { color: #c0392b; font-weight: 600; }
+.funnel-pct-ok   { color: #27ae60; }
+
+/* ---- Genotype table ---- */
+.primary-badge {
+    display: inline-block;
+    background: #1a1a2e;
+    color: #e8e8f0;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    margin-left: 6px;
+    font-weight: 600;
+    vertical-align: middle;
+}
+.mixed-badge {
+    display: inline-block;
+    background: #b5451b;
+    color: #fff;
+    font-size: 11px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    margin-left: 6px;
+    font-weight: 600;
+    vertical-align: middle;
+}
+
+/* ---- Per-branch collapsible sections ---- */
+details.branch-section {
+    border: 1px solid #c8cce0;
+    border-radius: 6px;
+    margin-bottom: 10px;
+    background: #fafbff;
+}
+details.branch-section[open] { background: #ffffff; }
+details.branch-section > summary {
+    padding: 11px 16px;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    color: #1a1a2e;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+details.branch-section > summary::-webkit-details-marker { display: none; }
+details.branch-section > summary::before {
+    content: "\25B6";
+    font-size: 10px;
+    color: #6060a0;
+    transition: transform 0.15s;
+}
+details.branch-section[open] > summary::before { transform: rotate(90deg); }
+
+.branch-body { padding: 0 16px 16px; }
+.branch-subsection-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: #3a3a6e;
+    margin: 16px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* ---- Coverage SVG mini-chart ---- */
+.coverage-chart-wrap {
+    overflow-x: auto;
+    margin-bottom: 12px;
+}
+.coverage-chart-wrap svg { display: block; }
+
+/* ---- Variants table ---- */
+.af-bar-outer {
+    display: inline-block;
+    width: 80px;
+    background: #e8eaf2;
+    border-radius: 3px;
+    height: 12px;
+    vertical-align: middle;
+    margin-right: 6px;
+}
+.af-bar-inner {
+    display: inline-block;
+    background: #3a5bd9;
+    border-radius: 3px;
+    height: 12px;
+}
+.sb-warn { color: #c0392b; font-weight: 600; }
+
+/* ---- Flags ---- */
+.flag-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 700;
+    margin: 3px 4px 3px 0;
+    letter-spacing: 0.3px;
+}
+.flag-NO_HCV_DETECTED      { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.flag-LOW_COVERAGE         { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
+.flag-LOW_MAPPING_RATE     { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
+.flag-MIXED                { background: #fde8dc; color: #7c2d12; border: 1px solid #f1986a; }
+.flag-NO_VIRAL_READS_LIKELY { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.flag-ALL_READS_FILTERED   { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.flag-EMPTY_INPUT          { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+.flag-LOW_COVERAGE_CONSENSUS { background: #fff3cd; color: #856404; border: 1px solid #ffc107; }
+.flag-DEVIDER_FAILED       { background: #e2e3e5; color: #383d41; border: 1px solid #d6d8db; }
+.flag-OK                   { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+
+.flag-explain {
+    font-size: 12px;
+    color: #555;
+    margin-left: 4px;
+}
+
+/* ---- NanoPlot image ---- */
+.nanoplot-img {
+    max-width: 100%;
+    border: 1px solid #dde1ea;
+    border-radius: 4px;
+    margin-top: 8px;
+}
+
+/* ---- Stat grid ---- */
+.stat-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.stat-card {
+    background: #f0f2f8;
+    border-radius: 6px;
+    padding: 10px 16px;
+    min-width: 140px;
+    flex: 1 1 140px;
+}
+.stat-card .stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #1a1a2e;
+    line-height: 1.2;
+}
+.stat-card .stat-label {
+    font-size: 11px;
+    color: #6060a0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* ---- Empty state ---- */
+.empty-state {
+    color: #888;
+    font-style: italic;
+    padding: 8px 0;
+}
+
+/* ---- Haplotype summary ---- */
+.hap-chain {
+    background: #f0f2f8;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    font-family: monospace;
+}
+.hap-chain .hap-id { font-weight: 700; color: #1a1a2e; }
+.hap-chain .hap-af { color: #3a5bd9; margin-left: 10px; }
+.hap-chain .hap-len { color: #27ae60; margin-left: 10px; }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+
+  <!-- ===== HEADER ===== -->
+  <div class="report-header">
+    <h1>hcv-quasi &mdash; Sample Report: {{ sample_id }}</h1>
+    <div class="meta-line">
+      <span>Run date: {{ run_date }}</span>
+      <span>Pipeline: {{ pipeline_version }}</span>
+      {% if primary_genotype %}<span>Primary genotype: {{ primary_genotype }}</span>{% endif %}
+    </div>
+  </div>
+
+  <!-- ===== STATUS BANNER ===== -->
+  <div class="status-banner status-{{ overall_status }}">
+    Status: {{ overall_status }}
+    {% if is_mixed %}<span class="mixed-badge">MIXED INFECTION</span>{% endif %}
+  </div>
+
+  <!-- ===== READ PROCESSING FUNNEL ===== -->
+  <div class="section">
+    <div class="section-title">Read Processing Funnel</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Stage</th>
+          <th>Read Count</th>
+          <th>% Retained (vs Raw)</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Raw reads</td>
+          <td>{{ "{:,}".format(funnel.raw_reads) if funnel.raw_reads is not none else "n/a" }}</td>
+          <td>100%</td>
+          <td>Input FASTQ (nanoq)</td>
+        </tr>
+        <tr>
+          <td>After quality/length filter</td>
+          <td>{{ "{:,}".format(funnel.filtered_reads) if funnel.filtered_reads is not none else "n/a" }}</td>
+          <td>
+            {% if funnel.filtered_reads is not none and funnel.raw_reads %}
+              {% set pct = (funnel.filtered_reads / funnel.raw_reads * 100) | round(1) %}
+              <span class="{{ 'funnel-pct-low' if pct < 50 else 'funnel-pct-ok' }}">{{ pct }}%</span>
+            {% else %}n/a{% endif %}
+          </td>
+          <td>chopper (Q&ge;{{ funnel.min_qual }}, {{ funnel.min_length }}&ndash;{{ funnel.max_length }} bp)</td>
+        </tr>
+        <tr>
+          <td>After host depletion</td>
+          <td>{{ "{:,}".format(funnel.host_depleted_reads) if funnel.host_depleted_reads is not none else "n/a" }}</td>
+          <td>
+            {% if funnel.host_depleted_reads is not none and funnel.raw_reads %}
+              {% set pct = (funnel.host_depleted_reads / funnel.raw_reads * 100) | round(1) %}
+              <span class="{{ 'funnel-pct-low' if pct < 10 else 'funnel-pct-ok' }}">{{ pct }}%</span>
+            {% else %}n/a{% endif %}
+          </td>
+          <td>
+            {% if funnel.host_fraction is not none %}
+              Host removed: {{ (funnel.host_fraction * 100) | round(2) }}%
+            {% else %}n/a{% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td>Mapped to HCV panel (Round 1)</td>
+          <td>{{ "{:,}".format(funnel.mapped_reads) if funnel.mapped_reads is not none else "n/a" }}</td>
+          <td>
+            {% if funnel.mapped_reads is not none and funnel.raw_reads %}
+              {% set pct = (funnel.mapped_reads / funnel.raw_reads * 100) | round(1) %}
+              <span class="{{ 'funnel-pct-low' if pct < 10 else 'funnel-pct-ok' }}">{{ pct }}%</span>
+            {% else %}n/a{% endif %}
+          </td>
+          <td>minimap2 Round 1 primary alignments</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===== GENOTYPE SUMMARY ===== -->
+  <div class="section">
+    <div class="section-title">Genotype Summary</div>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <div class="stat-value">{{ primary_genotype if primary_genotype else "None" }}</div>
+        <div class="stat-label">Primary Genotype</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{{ "Yes" if is_mixed else "No" }}</div>
+        <div class="stat-label">Mixed Infection</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{{ "{:,}".format(genotype_summary.total_mapped_reads) if genotype_summary.total_mapped_reads is not none else "n/a" }}</div>
+        <div class="stat-label">Total Mapped Reads</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">{{ (genotype_summary.ambiguous_fraction * 100) | round(1) }}%</div>
+        <div class="stat-label">Ambiguous Reads</div>
+      </div>
+    </div>
+
+    {% if genotype_summary.genotypes %}
+    <table>
+      <thead>
+        <tr>
+          <th>Genotype</th>
+          <th>Top Subtype</th>
+          <th>Read Count</th>
+          <th>Fraction</th>
+          <th>Top Reference</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in genotype_summary.genotypes | sort(attribute='fraction', reverse=true) %}
+        <tr>
+          <td>
+            {{ g.genotype }}
+            {% if g.genotype == primary_genotype %}
+              <span class="primary-badge">primary</span>
+            {% endif %}
+            {% if is_mixed and g.genotype != primary_genotype and g.fraction >= 0.05 %}
+              <span class="mixed-badge">minor</span>
+            {% endif %}
+          </td>
+          <td>{{ g.top_subtype | default("n/a") }}</td>
+          <td>{{ "{:,}".format(g.reads) if g.reads is not none else "n/a" }}</td>
+          <td>{{ (g.fraction * 100) | round(1) }}%</td>
+          <td style="font-family:monospace;font-size:11px;">{{ g.top_reference | default("n/a") }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty-state">No genotype data available.</p>
+    {% endif %}
+  </div>
+
+  <!-- ===== PER-BRANCH SECTIONS ===== -->
+  {% if branches %}
+  <div class="section">
+    <div class="section-title">Per-Genotype Branch Details</div>
+
+    {% for branch in branches %}
+    <details class="branch-section" {% if loop.first %}open{% endif %}>
+      <summary>
+        Genotype {{ branch.genotype }}
+        {% if branch.coverage_mean is not none %}
+          &mdash; Mean coverage: {{ branch.coverage_mean | round(1) }}x
+        {% endif %}
+        {% if branch.variant_count is not none %}
+          &mdash; Variants: {{ branch.variant_count }}
+        {% endif %}
+        {% if branch.haplotype_count is not none %}
+          &mdash; Haplotypes: {{ branch.haplotype_count }}
+        {% endif %}
+      </summary>
+      <div class="branch-body">
+
+        <!-- Coverage stats -->
+        <div class="branch-subsection-title">Coverage (mosdepth)</div>
+        {% if branch.coverage %}
+          <div class="stat-grid">
+            <div class="stat-card">
+              <div class="stat-value">{{ branch.coverage.mean | round(1) if branch.coverage.mean is not none else "n/a" }}x</div>
+              <div class="stat-label">Mean Coverage</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">{{ branch.coverage.min | round(0) | int if branch.coverage.min is not none else "n/a" }}x</div>
+              <div class="stat-label">Min Coverage</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">{{ branch.coverage.max | round(0) | int if branch.coverage.max is not none else "n/a" }}x</div>
+              <div class="stat-label">Max Coverage</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value">{{ branch.coverage.reference_length | default("n/a") }}</div>
+              <div class="stat-label">Reference Length (bp)</div>
+            </div>
+          </div>
+
+          {% if branch.coverage.regions %}
+          <div class="branch-subsection-title">Coverage Profile (100 bp windows)</div>
+          <div class="coverage-chart-wrap">
+            {{ branch.coverage.svg | safe }}
+          </div>
+          {% endif %}
+        {% else %}
+          <p class="empty-state">Coverage data not available.</p>
+        {% endif %}
+
+        <!-- Round 2 mapping stats -->
+        <div class="branch-subsection-title">Round 2 Mapping (samtools flagstat)</div>
+        {% if branch.flagstat %}
+          <table>
+            <thead>
+              <tr><th>Metric</th><th>Value</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Total reads</td><td>{{ "{:,}".format(branch.flagstat.total) if branch.flagstat.total is not none else "n/a" }}</td></tr>
+              <tr><td>Primary mapped</td><td>{{ "{:,}".format(branch.flagstat.primary_mapped) if branch.flagstat.primary_mapped is not none else "n/a" }}</td></tr>
+              <tr><td>Mapping rate</td><td>{{ branch.flagstat.mapping_rate | default("n/a") }}</td></tr>
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty-state">Flagstat data not available.</p>
+        {% endif %}
+
+        <!-- Variants table -->
+        <div class="branch-subsection-title">Variants (LoFreq filtered, AF &ge; 1%)</div>
+        {% if branch.variants %}
+          <table>
+            <thead>
+              <tr>
+                <th>POS</th>
+                <th>REF</th>
+                <th>ALT</th>
+                <th>AF</th>
+                <th>DP</th>
+                <th>SB</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for v in branch.variants | sort(attribute='af', reverse=true) %}
+              <tr>
+                <td>{{ v.pos }}</td>
+                <td style="font-family:monospace;">{{ v.ref }}</td>
+                <td style="font-family:monospace;">{{ v.alt }}</td>
+                <td>
+                  <span class="af-bar-outer">
+                    <span class="af-bar-inner" style="width:{{ [v.af * 100, 100] | min | int }}px;"></span>
+                  </span>
+                  {{ (v.af * 100) | round(2) }}%
+                </td>
+                <td>{{ v.dp }}</td>
+                <td {% if v.sb is not none and v.sb > 60 %}class="sb-warn"{% endif %}>
+                  {{ v.sb if v.sb is not none else "n/a" }}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p class="empty-state">No variants above reporting threshold (AF &ge; 1%, DP &ge; 20).</p>
+        {% endif %}
+
+        <!-- Haplotype summary -->
+        <div class="branch-subsection-title">Haplotype Reconstruction (DEVIDER + stitch)</div>
+        {% if branch.haplotypes %}
+          {% if branch.haplotypes.failed %}
+            <p class="empty-state">Haplotype reconstruction failed (DEVIDER exit non-zero). Sample continues — see flags.</p>
+          {% elif branch.haplotypes.fallback_used %}
+            <p class="empty-state">Haplotype stitching produced no chains (DEVIDER may have produced no output for this branch).</p>
+          {% else %}
+            <div class="stat-grid">
+              <div class="stat-card">
+                <div class="stat-value">{{ branch.haplotypes.chains_stitched }}</div>
+                <div class="stat-label">Stitched Chains</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-value">{{ branch.haplotypes.windows_found }}</div>
+                <div class="stat-label">DEVIDER Windows</div>
+              </div>
+              {% if branch.haplotypes.longest_chain_length is not none %}
+              <div class="stat-card">
+                <div class="stat-value">{{ "{:,}".format(branch.haplotypes.longest_chain_length) }} bp</div>
+                <div class="stat-label">Longest Haplotype</div>
+              </div>
+              {% endif %}
+            </div>
+            {% if branch.haplotypes.chains %}
+              <div class="branch-subsection-title" style="margin-top:8px;">Haplotype Chains</div>
+              {% for chain in branch.haplotypes.chains %}
+              <div class="hap-chain">
+                <span class="hap-id">{{ chain.chain_id | default("chain_" + loop.index | string) }}</span>
+                {% if chain.abundance is not none %}
+                  <span class="hap-af">AF &ge; {{ (chain.abundance * 100) | round(1) }}%</span>
+                {% endif %}
+                {% if chain.total_length is not none %}
+                  <span class="hap-len">{{ "{:,}".format(chain.total_length) }} bp</span>
+                {% endif %}
+                {% if chain.n_windows is not none %}
+                  &bull; {{ chain.n_windows }} window(s)
+                {% endif %}
+              </div>
+              {% endfor %}
+            {% endif %}
+            {% if branch.haplotypes.unlinked_windows %}
+              <p style="font-size:12px;color:#888;margin-top:8px;">
+                {{ branch.haplotypes.unlinked_windows | length }} window(s) could not be linked into a chain.
+              </p>
+            {% endif %}
+          {% endif %}
+        {% else %}
+          <p class="empty-state">Haplotype data not available.</p>
+        {% endif %}
+
+      </div><!-- /.branch-body -->
+    </details><!-- /details.branch-section -->
+    {% endfor %}
+
+  </div><!-- /.section (per-branch) -->
+  {% endif %}
+
+  <!-- ===== NANOPLOT READ QUALITY ===== -->
+  {% if nanoplot_images %}
+  <div class="section">
+    <div class="section-title">Read Quality (NanoPlot)</div>
+    {% for img in nanoplot_images %}
+      <img class="nanoplot-img" src="data:image/png;base64,{{ img.data }}" alt="{{ img.name }}" title="{{ img.name }}" />
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- ===== PIPELINE FLAGS ===== -->
+  <div class="section">
+    <div class="section-title">Pipeline Flags</div>
+    {% if flags %}
+      {% for flag in flags %}
+      <div style="margin-bottom:6px;">
+        <span class="flag-badge flag-{{ flag.name | replace(' ', '_') }}">{{ flag.name }}</span>
+        <span class="flag-explain">{{ flag.explanation }}</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <span class="flag-badge flag-OK">PASS</span>
+      <span class="flag-explain">No pipeline flags raised for this sample.</span>
+    {% endif %}
+  </div>
+
+</div><!-- /.page-wrapper -->
+</body>
+</html>
