@@ -31,7 +31,7 @@
 
 process INDEX_PANEL {
 
-    label 'process_medium'
+    label 'process_low'
 
     tag "panel_index"
 

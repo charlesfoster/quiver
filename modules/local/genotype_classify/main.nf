@@ -33,7 +33,7 @@
 
 process GENOTYPE_CLASSIFY {
 
-    label 'process_medium'
+    label 'process_low'
 
     tag "${meta.id}"
 

@@ -83,7 +83,7 @@
 
 process DEVIDER {
 
-    label 'process_high_memory'
+    label 'process_medium'
 
     tag "${meta.id}:${meta.genotype}"
 

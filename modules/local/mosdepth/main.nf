@@ -50,7 +50,7 @@
 
 process MOSDEPTH {
 
-    label 'process_medium'
+    label 'process_low'
 
     tag "${meta.id}:${meta.genotype}"
 

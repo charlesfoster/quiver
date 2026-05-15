@@ -68,7 +68,7 @@
 
 process BCFTOOLS_CONSENSUS_CALL {
 
-    label 'process_medium'
+    label 'process_low'
 
     tag "${meta.id}:${meta.genotype}"
 
