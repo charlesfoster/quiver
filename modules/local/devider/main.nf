@@ -68,6 +68,7 @@
         versions        — versions.yml
 
     Container:  quay.io/biocontainers/devider:0.0.1--ha6fb395_3
+    Conda:      bioconda::devider=0.0.1  (includes osx-arm64 build)
     Label:      process_high_memory  (worst case: 16 CPU, 64 GB, 4 hours — Step 5.19)
 
     Output published to:
@@ -89,7 +90,7 @@ process DEVIDER {
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
         'https://depot.galaxyproject.org/singularity/devider:0.0.1--ha6fb395_3' :
         'quay.io/biocontainers/devider:0.0.1--ha6fb395_3' }"
-    conda     null  // no conda package; install devider from source if needed
+    conda "${moduleDir}/environment.yml"
 
     publishDir (
         path: { "${params.outdir}/${meta.id}/haplotypes/${meta.genotype}/devider/" },
