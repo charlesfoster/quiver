@@ -58,8 +58,11 @@ process RASUSA_ALN {
     rasusa aln \\
         --coverage ${coverage} \\
         --seed ${seed} \\
-        -o ${meta.id}_${meta.genotype}_subsampled.bam \\
+        -o rasusa_unsorted.bam \\
         ${bam}
+
+    samtools sort -@ ${task.cpus} -o ${meta.id}_${meta.genotype}_subsampled.bam rasusa_unsorted.bam
+    rm rasusa_unsorted.bam
 
     samtools index ${meta.id}_${meta.genotype}_subsampled.bam
 
