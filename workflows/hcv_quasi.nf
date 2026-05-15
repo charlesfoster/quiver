@@ -479,24 +479,27 @@ workflow HCV_QUASI {
     // =====================================================================
     // Steps 5.14–5.16 — LoFreq prep / call / filter
     //
-    // PREP_LOFREQ_INPUT expects: [meta, reads, consensus_fasta, fai, mmi]
-    // Build that tuple by joining per-branch reads with the consensus channel.
+    // PREP_LOFREQ_INPUT expects: [meta, bam, bai, consensus_fasta]
+    // Feed it the full-depth round 2 BAM directly; RASUSA_ALN inside the
+    // subworkflow subsamples to params.lofreq_max_depth using `rasusa aln`,
+    // which is coverage-accurate and avoids a redundant minimap2 remap.
     // =====================================================================
-    ch_prep_lofreq_input = ch_consensus
-        .join(ch_branch_reads_keyed, by: 0)
-        .map { key, meta, fasta, fai, mmi, reads ->
-            tuple(meta, reads, fasta, fai, mmi)
-        }
+    ch_consensus_fasta_only = BUILD_CONSENSUS.out.consensus
+        .map { meta, fasta, fai, mmi -> tuple([meta.id, meta.genotype], fasta) }
+
+    ch_round2_bam_keyed = MINIMAP2_ROUND2.out.bam
+        .map { meta, bam, bai -> tuple([meta.id, meta.genotype], meta, bam, bai) }
+
+    ch_prep_lofreq_input = ch_round2_bam_keyed
+        .join(ch_consensus_fasta_only, by: 0)
+        .map { key, meta, bam, bai, fasta -> tuple(meta, bam, bai, fasta) }
 
     PREP_LOFREQ_INPUT(ch_prep_lofreq_input)
     ch_versions = ch_versions.mix(PREP_LOFREQ_INPUT.out.versions)
 
-    // LoFreq input: [meta, bam, bai, ref_fasta]
+    // LoFreq call input: [meta, bam, bai, ref_fasta]
     ch_lofreq_bam_keyed = PREP_LOFREQ_INPUT.out.lofreq_bam
         .map { meta, bam, bai -> tuple([meta.id, meta.genotype], meta, bam, bai) }
-
-    ch_consensus_fasta_only = BUILD_CONSENSUS.out.consensus
-        .map { meta, fasta, fai, mmi -> tuple([meta.id, meta.genotype], fasta) }
 
     ch_lofreq_call_input = ch_lofreq_bam_keyed
         .join(ch_consensus_fasta_only, by: 0)
@@ -566,7 +569,7 @@ workflow HCV_QUASI {
     //
     // LOW_COVERAGE branches skip DEVIDER but keep LoFreq.
     // =====================================================================
-    PREP_DEVIDER_INPUT(ch_prep_lofreq_input)  // same input shape as LoFreq prep
+    PREP_DEVIDER_INPUT(ch_prep_lofreq_input)  // [meta, bam, bai, consensus_fasta] — same shape as LoFreq prep
     ch_versions = ch_versions.mix(PREP_DEVIDER_INPUT.out.versions)
 
     // Build DEVIDER input: [meta, bam, bai, vcf, tbi, ref_fasta], but only for
