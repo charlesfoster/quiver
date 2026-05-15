@@ -217,7 +217,7 @@
         "devider_min_cov": {
           "type": "integer",
           "description": "Minimum per-window coverage for DEVIDER to call haplotypes.",
-          "default": 50,
+          "default": 20,
           "minimum": 0
         },
         "devider_min_abund": {

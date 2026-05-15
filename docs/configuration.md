@@ -43,7 +43,7 @@ params {
     rasusa_seed_devider     = 43
 
     // --- Haplotype ---
-    devider_min_cov         = 50      // DEVIDER --min-cov (haplotype depth floor)
+    devider_min_cov         = 20      // DEVIDER --min-cov (haplotype depth floor)
     devider_min_abund       = 0.25    // DEVIDER --min-abund (% abundance floor)
     stitch_min_reads        = 5       // post-hoc stitcher minimum spanning reads
 
