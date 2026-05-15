@@ -32,7 +32,7 @@
 
 process APPLY_CONSENSUS {
 
-    label 'process_low'
+    label 'process_medium'
 
     tag "${meta.id}:${meta.genotype}"
 
