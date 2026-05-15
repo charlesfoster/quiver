@@ -58,6 +58,7 @@ To set many parameters for a site, write a params JSON file and pass it with `-p
 | `--min_report_af` | float | `0.01` | Reporting AF threshold (1%). Applied by the variant filter step to produce `lofreq.filtered.vcf.gz`. | Increase to 0.02–0.05 for conservative clinical reporting. |
 | `--min_mq` | integer | `20` | Minimum mapping quality for reads contributing to variant calls (`lofreq call-parallel --min-mq`). | Increase to 30 for stricter calls at the cost of read yield. |
 | `--min_bq` | integer | `7` | Minimum base quality for variant calls (`lofreq call-parallel --min-bq`). | Rarely need changing for R10.4.1 data with HAC basecalls. |
+| `--min_alt_bq` | integer | `7` | Minimum base quality for alt variant calls (`lofreq call-parallel --min-alt-bq`). | Rarely need changing for R10.4.1 data with HAC basecalls. |
 | `--lofreq_sig` | float | `0.01` | LoFreq strand-bias significance threshold. | Lower to 0.001 if strand-biased false positives are a concern (e.g., known problematic homopolymers). |
 
 ---

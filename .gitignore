@@ -8,6 +8,13 @@ work/
 .nextflow/
 .nextflow.log*
 
+# macOS metadata
+**/.DS_Store
+
+# Root-level samplesheets
+/samplesheet*.csv
+/*samplesheet*.csv
+
 # Index files (regenerated at runtime)
 *.mmi
 *.fai

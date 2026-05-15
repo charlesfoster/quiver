@@ -71,3 +71,52 @@ jobs:
         # release changes the exit code.
         run: |
           docker run --rm --platform linux/amd64 hcv-quasi/devider:smoke --help
+
+  build-align-tools:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (multi-arch emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request' && github.actor != 'dependabot[bot]'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build align-tools image (amd64 + arm64)
+        uses: docker/build-push-action@v5
+        with:
+          context: containers/align-tools
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/align-tools:1.0
+            ghcr.io/${{ github.repository_owner }}/align-tools:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build align-tools image (amd64 only, for smoke test)
+        uses: docker/build-push-action@v5
+        with:
+          context: containers/align-tools
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: hcv-quasi/align-tools:smoke
+          cache-from: type=gha
+
+      - name: Smoke test — minimap2, samtools, bcftools present
+        run: |
+          docker run --rm --platform linux/amd64 hcv-quasi/align-tools:smoke minimap2 --version
+          docker run --rm --platform linux/amd64 hcv-quasi/align-tools:smoke samtools --version
+          docker run --rm --platform linux/amd64 hcv-quasi/align-tools:smoke bcftools --version

@@ -45,5 +45,5 @@ dependencies:
   # Python BAM parsing
   - bioconda::pysam=0.22.1
 
-  # NOTE: DEVIDER v0.0.1 has no bioconda package and no public container image.
-  # It is built from source via bin/install_devider.sh (Prompt 20).
+  # NOTE: DEVIDER v0.0.1 has no bioconda package; use the biocontainer
+  # quay.io/biocontainers/devider:0.0.1--ha6fb395_3 for containerised runs.

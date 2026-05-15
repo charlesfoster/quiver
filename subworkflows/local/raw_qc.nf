@@ -16,8 +16,8 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-include { NANOPLOT } from '../../modules/local/nanoplot'
-include { NANOQ    } from '../../modules/local/nanoq'
+include { NANOPLOT } from '../../modules/local/nanoplot/main'
+include { NANOQ    } from '../../modules/local/nanoq/main'
 
 workflow RAW_QC {
 

@@ -117,3 +117,34 @@ workflow {
     // Launch main pipeline workflow
     HCV_QUASI()
 }
+
+// -----------------------------------------------------------------------
+// Completion handler
+// -----------------------------------------------------------------------
+workflow.onComplete {
+    def ms      = workflow.duration.toMillis()
+    def hours   = (ms / 3600000) as int
+    def mins    = ((ms % 3600000) / 60000) as int
+    def secs    = ((ms % 60000) / 1000) as int
+    def elapsed = String.format("%d h %02d min %02d s", hours, mins, secs)
+
+    if (workflow.success) {
+        log.info """
+        =========================================
+        hcv-quasi  v${workflow.manifest.version}
+        =========================================
+        Analysis successfully completed in ${elapsed}.
+        Results located in: ${params.outdir}
+        =========================================
+        """.stripIndent()
+    } else {
+        log.error """
+        =========================================
+        hcv-quasi  v${workflow.manifest.version}
+        =========================================
+        Pipeline completed with errors after ${elapsed}.
+        Check the Nextflow log and work/ directory for details.
+        =========================================
+        """.stripIndent()
+    }
+}

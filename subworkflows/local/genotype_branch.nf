@@ -66,7 +66,7 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-include { PARTITION_READS } from '../../modules/local/partition_reads'
+include { PARTITION_READS } from '../../modules/local/partition_reads/main'
 
 
 workflow GENOTYPE_BRANCH {
@@ -89,7 +89,7 @@ workflow GENOTYPE_BRANCH {
     //    directly — no `.text` round-trip needed.
     // ----------------------------------------------------------------
     ch_parsed = ch_summary.map { meta, json_path ->
-        def parsed = new groovy.json.JsonSlurper().parse(json_path as File)
+        def parsed = new groovy.json.JsonSlurper().parse(json_path.toFile())
         // Build a fast-lookup map: genotype → top_reference
         def top_ref_by_gt = [:]
         parsed.genotypes.each { entry ->

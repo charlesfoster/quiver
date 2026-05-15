@@ -155,6 +155,7 @@ class WindowHaplotype:
     hap_index: int              # haplotype ordinal within the window (0, 1, 2, ...)
     raw_id: str                 # original FASTA header (without leading '>')
     sequence: str               # nucleotide sequence (uppercase, gap-free)
+    reported_abundance: Optional[float] = None  # DEVIDER-reported abundance fraction (0-1)
 
     @property
     def key(self) -> str:
@@ -224,18 +225,35 @@ _HEADER_PATTERNS = [
     re.compile(r"^(?P<start>\d+)[_\-](?P<end>\d+)[_\-](?P<hap>\d+)\b"),
 ]
 
+# Matches DEVIDER 0.0.1 whole-genome (single-window) output:
+#   >Contig:...,Range:ALL-ALL,Haplotype:N,...
+_ALLALL_RE = re.compile(r"Range:ALL-ALL.*?Haplotype:(?P<hap>\d+)", re.IGNORECASE)
+# Abundance field in DEVIDER ALL-ALL headers: Abundance:12.55 (percentage)
+_ABUNDANCE_RE = re.compile(r"Abundance:(?P<ab>[\d.]+)", re.IGNORECASE)
+
 
 def parse_devider_header(header: str) -> Optional[tuple[int, int, int]]:
     """
     Parse a DEVIDER haplotype FASTA header into (start, end, hap_index).
 
-    The header is the line after '>' with any trailing description stripped.
+    DEVIDER 0.0.1 ALL-ALL mode (whole-genome single window) emits headers like:
+        >Contig:...,Range:ALL-ALL,Haplotype:N,Abundance:X,Depth:Y
+    All haplotypes are assigned to virtual window (0, 0) so they are grouped
+    as a single window and emitted as individual chains without stitching.
 
-    Returns None if no pattern matches; the caller is expected to fall back
-    to ordinal-only handling.
+    Returns None if no pattern matches; the caller falls back to ordinal-only
+    handling (each unrecognised header becomes its own pseudo-window chain).
     """
-    # Strip trailing description (anything after the first whitespace).
     name = header.split(None, 1)[0]
+
+    # DEVIDER 0.0.1 ALL-ALL: single virtual window at (0, 0).
+    m = _ALLALL_RE.search(name)
+    if m:
+        try:
+            return (0, 0, int(m.group("hap")))
+        except (KeyError, ValueError):
+            pass
+
     for pat in _HEADER_PATTERNS:
         m = pat.search(name)
         if m:
@@ -243,6 +261,17 @@ def parse_devider_header(header: str) -> Optional[tuple[int, int, int]]:
                 return (int(m.group("start")), int(m.group("end")), int(m.group("hap")))
             except (KeyError, ValueError):
                 continue
+    return None
+
+
+def _parse_devider_abundance(header: str) -> Optional[float]:
+    """Extract DEVIDER-reported abundance percentage from header, as a fraction 0-1."""
+    m = _ABUNDANCE_RE.search(header)
+    if m:
+        try:
+            return float(m.group("ab")) / 100.0
+        except ValueError:
+            pass
     return None
 
 
@@ -282,10 +311,19 @@ def discover_devider_outputs(devider_dir: Path) -> tuple[list[Path], list[Path],
     if (devider_dir / "devider.failed").exists():
         return [], [], True
 
-    fastas = sorted(
-        list(devider_dir.rglob("*.fasta")) + list(devider_dir.rglob("*.fa"))
-    )
-    bams = sorted(devider_dir.rglob("*.bam"))
+    # Only look at top-level files — do NOT recurse into intermediate/.
+    # DEVIDER 0.0.1 emits two FASTA files at the top level:
+    #   majority_vote_haplotypes.fasta — full-length genome sequences (preferred)
+    #   snp_haplotypes.fasta           — variable-site-only sequences (261 bp)
+    # We want the full-genome sequences for the merged haplotype output.
+    preferred = devider_dir / "majority_vote_haplotypes.fasta"
+    if preferred.is_file():
+        fastas = [preferred]
+    else:
+        fastas = sorted(
+            list(devider_dir.glob("*.fasta")) + list(devider_dir.glob("*.fa"))
+        )
+    bams = sorted(devider_dir.glob("*.bam"))
 
     return fastas, bams, False
 
@@ -313,14 +351,15 @@ def load_haplotypes(fasta_paths: list[Path]) -> tuple[list[WindowHaplotype], lis
                 unparsed.append((header, sequence))
                 continue
             start, end, hap = parsed
-            by_window[(start, end)].append((hap, header, sequence))
+            abund = _parse_devider_abundance(header)
+            by_window[(start, end)].append((hap, header, sequence, abund))
 
     # Assign deterministic ordinals: sort windows by start position, then end.
     sorted_windows = sorted(by_window.keys(), key=lambda se: (se[0], se[1]))
     haplotypes: list[WindowHaplotype] = []
     for w_idx, (start, end) in enumerate(sorted_windows):
         # Sort haplotypes within the window by their declared hap_index for stability.
-        for hap, header, seq in sorted(by_window[(start, end)], key=lambda x: x[0]):
+        for hap, header, seq, abund in sorted(by_window[(start, end)], key=lambda x: x[0]):
             haplotypes.append(WindowHaplotype(
                 window_index=w_idx,
                 window_start=start,
@@ -328,6 +367,7 @@ def load_haplotypes(fasta_paths: list[Path]) -> tuple[list[WindowHaplotype], lis
                 hap_index=hap,
                 raw_id=header,
                 sequence=seq,
+                reported_abundance=abund,
             ))
 
     # Append unparsed records as their own pseudo-windows at the end.
@@ -642,7 +682,12 @@ def _build_chain(
         ]
         abundance = min(fractions) if fractions else 1.0
     else:
-        abundance = 1.0  # single-window chain — no junctions to fractionate against
+        # Single-window chain — use DEVIDER-reported abundance if available.
+        reported = hap_by_pos.get((windows[0], haps[0]))
+        if reported is not None and reported.reported_abundance is not None:
+            abundance = reported.reported_abundance
+        else:
+            abundance = 1.0
     return Chain(
         windows=list(windows),
         hap_indices=list(haps),

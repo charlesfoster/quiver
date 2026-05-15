@@ -1,0 +1,56 @@
+name: Linting
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+  release:
+    types: [published]
+
+jobs:
+  nextflow-config:
+    name: Nextflow config validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out pipeline code
+        uses: actions/checkout@v4
+
+      - name: Install Nextflow
+        uses: nf-core/setup-nextflow@v2
+        with:
+          version: "24.10.5"
+
+      - name: Validate Nextflow config parses cleanly
+        # nextflow config resolves all includeConfig directives and
+        # interpolates params — a syntax error anywhere fails this step.
+        run: nextflow config -profile docker ${GITHUB_WORKSPACE}
+
+  python-lint:
+    name: Python script linting (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out pipeline code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Lint bin/ scripts
+        run: ruff check bin/
+
+  schema-validate:
+    name: Validate nextflow_schema.json
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out pipeline code
+        uses: actions/checkout@v4
+
+      - name: Check schema is valid JSON
+        run: python -c "import json, sys; json.load(open('nextflow_schema.json'))" && echo "Schema is valid JSON"

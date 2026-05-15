@@ -486,39 +486,52 @@ details.branch-section[open] > summary::before { transform: rotate(90deg); }
         {% endif %}
 
         <!-- Variants table -->
-        <div class="branch-subsection-title">Variants (LoFreq filtered, AF &ge; 1%)</div>
+        <div class="branch-subsection-title">
+          Variants (LoFreq filtered, AF &ge; 1%)
+          {% if branch.variants %}
+            &mdash; {{ branch.variants | length }} variant(s)
+            <button class="toggle-btn"
+                    onclick="toggleVariants(this)"
+                    data-target="variants-{{ branch.genotype }}"
+                    style="margin-left:8px;font-size:11px;padding:2px 8px;cursor:pointer;border:1px solid #ccc;border-radius:3px;background:#f5f5f5;">
+              Show
+            </button>
+          {% endif %}
+        </div>
         {% if branch.variants %}
-          <table>
-            <thead>
-              <tr>
-                <th>POS</th>
-                <th>REF</th>
-                <th>ALT</th>
-                <th>AF</th>
-                <th>DP</th>
-                <th>SB</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for v in branch.variants | sort(attribute='af', reverse=true) %}
-              <tr>
-                <td>{{ v.pos }}</td>
-                <td style="font-family:monospace;">{{ v.ref }}</td>
-                <td style="font-family:monospace;">{{ v.alt }}</td>
-                <td>
-                  <span class="af-bar-outer">
-                    <span class="af-bar-inner" style="width:{{ [v.af * 100, 100] | min | int }}px;"></span>
-                  </span>
-                  {{ (v.af * 100) | round(2) }}%
-                </td>
-                <td>{{ v.dp }}</td>
-                <td {% if v.sb is not none and v.sb > 60 %}class="sb-warn"{% endif %}>
-                  {{ v.sb if v.sb is not none else "n/a" }}
-                </td>
-              </tr>
-              {% endfor %}
-            </tbody>
-          </table>
+          <div id="variants-{{ branch.genotype }}" style="display:none;">
+            <table>
+              <thead>
+                <tr>
+                  <th>POS</th>
+                  <th>REF</th>
+                  <th>ALT</th>
+                  <th>AF</th>
+                  <th>DP</th>
+                  <th>SB</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for v in branch.variants | sort(attribute='af', reverse=true) %}
+                <tr>
+                  <td>{{ v.pos }}</td>
+                  <td style="font-family:monospace;">{{ v.ref }}</td>
+                  <td style="font-family:monospace;">{{ v.alt }}</td>
+                  <td>
+                    <span class="af-bar-outer">
+                      <span class="af-bar-inner" style="width:{{ [v.af * 100, 100] | min | int }}px;"></span>
+                    </span>
+                    {{ (v.af * 100) | round(2) }}%
+                  </td>
+                  <td>{{ v.dp }}</td>
+                  <td {% if v.sb is not none and v.sb > 60 %}class="sb-warn"{% endif %}>
+                    {{ v.sb if v.sb is not none else "n/a" }}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
         {% else %}
           <p class="empty-state">No variants above reporting threshold (AF &ge; 1%, DP &ge; 20).</p>
         {% endif %}
@@ -528,13 +541,18 @@ details.branch-section[open] > summary::before { transform: rotate(90deg); }
         {% if branch.haplotypes %}
           {% if branch.haplotypes.failed %}
             <p class="empty-state">Haplotype reconstruction failed (DEVIDER exit non-zero). Sample continues — see flags.</p>
-          {% elif branch.haplotypes.fallback_used %}
-            <p class="empty-state">Haplotype stitching produced no chains (DEVIDER may have produced no output for this branch).</p>
+          {% elif branch.haplotypes.fallback_used and not branch.haplotypes.chains %}
+            <p class="empty-state">DEVIDER produced no haplotype output for this branch.</p>
           {% else %}
+            {% if branch.haplotypes.fallback_used %}
+              <p style="font-size:12px;color:#856404;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:4px 8px;margin-bottom:8px;">
+                Haplotypes shown without cross-window read-spanning evidence (no haplotype-tagged BAM). Chains represent DEVIDER per-window output directly.
+              </p>
+            {% endif %}
             <div class="stat-grid">
               <div class="stat-card">
                 <div class="stat-value">{{ branch.haplotypes.chains_stitched }}</div>
-                <div class="stat-label">Stitched Chains</div>
+                <div class="stat-label">Haplotypes</div>
               </div>
               <div class="stat-card">
                 <div class="stat-value">{{ branch.haplotypes.windows_found }}</div>
@@ -551,22 +569,25 @@ details.branch-section[open] > summary::before { transform: rotate(90deg); }
               <div class="branch-subsection-title" style="margin-top:8px;">Haplotype Chains</div>
               {% for chain in branch.haplotypes.chains %}
               <div class="hap-chain">
-                <span class="hap-id">{{ chain.chain_id | default("chain_" + loop.index | string) }}</span>
-                {% if chain.abundance is not none %}
-                  <span class="hap-af">AF &ge; {{ (chain.abundance * 100) | round(1) }}%</span>
+                <span class="hap-id">{{ chain.chain_id | default(chain.id) | default("haplotype_" + loop.index0 | string) }}</span>
+                {% set abund = chain.abundance if chain.abundance is defined else chain.abundance_lower_bound %}
+                {% if abund is not none and abund < 1.0 %}
+                  <span class="hap-af">AF &ge; {{ (abund * 100) | round(1) }}%</span>
                 {% endif %}
-                {% if chain.total_length is not none %}
-                  <span class="hap-len">{{ "{:,}".format(chain.total_length) }} bp</span>
+                {% set tlen = chain.total_length if chain.total_length is defined else chain.length_bp %}
+                {% if tlen is not none %}
+                  <span class="hap-len">{{ "{:,}".format(tlen) }} bp</span>
                 {% endif %}
-                {% if chain.n_windows is not none %}
-                  &bull; {{ chain.n_windows }} window(s)
+                {% set nwin = chain.n_windows if chain.n_windows is defined else (chain.windows | length if chain.windows is defined else none) %}
+                {% if nwin is not none and nwin > 1 %}
+                  &bull; {{ nwin }} window(s)
                 {% endif %}
               </div>
               {% endfor %}
             {% endif %}
             {% if branch.haplotypes.unlinked_windows %}
               <p style="font-size:12px;color:#888;margin-top:8px;">
-                {{ branch.haplotypes.unlinked_windows | length }} window(s) could not be linked into a chain.
+                {{ branch.haplotypes.unlinked_windows | length }} window junction(s) without spanning read support.
               </p>
             {% endif %}
           {% endif %}
@@ -608,5 +629,19 @@ details.branch-section[open] > summary::before { transform: rotate(90deg); }
   </div>
 
 </div><!-- /.page-wrapper -->
+<script>
+function toggleVariants(btn) {
+  var id = btn.getAttribute('data-target');
+  var div = document.getElementById(id);
+  if (!div) return;
+  if (div.style.display === 'none') {
+    div.style.display = '';
+    btn.textContent = 'Hide';
+  } else {
+    div.style.display = 'none';
+    btn.textContent = 'Show';
+  }
+}
+</script>
 </body>
 </html>

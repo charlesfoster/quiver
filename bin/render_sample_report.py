@@ -141,13 +141,11 @@ def parse_mosdepth_summary(path: Path | None) -> dict | None:
     """
     Parse a *.mosdepth.summary.txt file.
 
-    Format (tab-delimited, may have a header depending on version):
-        chrom   start   end     mean    min     max
-        ...
-        total_region  0  9646  500.0   0  10000
+    mosdepth summary format (tab-delimited):
+        chrom   length  bases   mean    min     max
 
+    The 'total_region' row supplies genome-wide stats.
     Returns dict with keys: mean, min, max, reference_length, regions (list).
-    The 'total_region' row supplies the genome-wide stats.
     """
     if path is None or not path.is_file():
         return None
@@ -162,29 +160,63 @@ def parse_mosdepth_summary(path: Path | None) -> dict | None:
         parts = line.split("\t")
         if len(parts) < 4:
             continue
-        chrom, start, end, mean_val = parts[0], parts[1], parts[2], parts[3]
-        min_val = parts[4] if len(parts) > 4 else None
-        max_val = parts[5] if len(parts) > 5 else None
+        chrom = parts[0]
+        # Columns: chrom, length, bases, mean, min, max
+        # Skip header row
+        if chrom == "chrom":
+            continue
+        length_str = parts[1]
+        mean_val   = parts[3]
+        min_val    = parts[4] if len(parts) > 4 else None
+        max_val    = parts[5] if len(parts) > 5 else None
         try:
             mean_f = float(mean_val)
         except ValueError:
             continue
-        if chrom == "total_region" or chrom == "total":
+        if chrom in ("total_region", "total"):
             try:
-                result["reference_length"] = int(end) - int(start)
+                result["reference_length"] = int(length_str)
             except ValueError:
                 pass
             result["mean"] = mean_f
             result["min"]  = float(min_val) if min_val else None
             result["max"]  = float(max_val) if max_val else None
-        else:
-            result["regions"].append({
-                "chrom": chrom,
-                "start": int(start),
-                "end":   int(end),
-                "mean":  mean_f,
-            })
     return result
+
+
+def parse_mosdepth_bed(path: Path | None) -> list[dict] | None:
+    """
+    Parse a *.regions.bed.gz produced by mosdepth --by 100.
+
+    Format (0-based, tab-delimited): chrom  start  end  coverage
+    Returns a list of {chrom, start, end, mean} dicts for the coverage chart.
+    """
+    if path is None or not path.is_file():
+        return None
+    import gzip
+    regions: list[dict] = []
+    try:
+        opener = gzip.open if str(path).endswith(".gz") else open
+        with opener(path, "rt") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 4:
+                    continue
+                try:
+                    regions.append({
+                        "chrom": parts[0],
+                        "start": int(parts[1]),
+                        "end":   int(parts[2]),
+                        "mean":  float(parts[3]),
+                    })
+                except (ValueError, IndexError):
+                    continue
+    except Exception:
+        return None
+    return regions if regions else None
 
 
 def parse_variant_tsv(path: Path | None) -> list[dict] | None:
@@ -259,15 +291,22 @@ def parse_stitch_report(path: Path | None) -> dict | None:
     """
     Parse a *_stitch_report.json produced by STITCH_HAPLOTYPES.
 
-    Adds a 'longest_chain_length' key computed from the chains list.
+    Normalises chain dicts to add template-friendly aliases and computes
+    longest_chain_length.  Stitch JSON uses: id, length_bp, abundance_lower_bound,
+    windows (list); template and JSON summary use: chain_id, total_length,
+    abundance, n_windows.
     """
     d = _safe_load_json(path)
     if d is None:
         return None
-    # Compute longest chain total_length for the template
     longest = None
     for chain in d.get("chains", []):
-        tlen = chain.get("total_length")
+        # Add template aliases (setdefault preserves any already-correct keys).
+        chain.setdefault("chain_id",     chain.get("id"))
+        chain.setdefault("total_length", chain.get("length_bp"))
+        chain.setdefault("abundance",    chain.get("abundance_lower_bound"))
+        chain.setdefault("n_windows",    len(chain.get("windows") or []))
+        tlen = chain.get("length_bp")
         if tlen is not None:
             longest = max(longest, tlen) if longest is not None else tlen
     d["longest_chain_length"] = longest
@@ -529,22 +568,27 @@ def build_context(args: argparse.Namespace) -> dict:
         return result
 
     mosdepth_by_gt  = _index_files(args.mosdepth_summaries)
+    mosdepth_bed_by_gt = _index_files(args.mosdepth_beds)
     variants_by_gt  = _index_files(args.variant_tsvs)
     flagstat_by_gt  = _index_files(args.flagstats)
     stitch_by_gt    = _index_files(args.stitch_reports)
 
     # Collect all distinct genotype keys from all input files + branches_to_run
     all_gt_keys: set[str] = set(branches_to_run)
-    for d in [mosdepth_by_gt, variants_by_gt, flagstat_by_gt, stitch_by_gt]:
+    for d in [mosdepth_by_gt, mosdepth_bed_by_gt, variants_by_gt, flagstat_by_gt, stitch_by_gt]:
         all_gt_keys |= set(d.keys())
 
     branches: list[dict] = []
     for gt in sorted(all_gt_keys):
-        # Coverage
+        # Coverage — summary for stats, BED for per-window chart.
         mosdepth_data = parse_mosdepth_summary(mosdepth_by_gt.get(gt))
-        if mosdepth_data and mosdepth_data.get("regions"):
-            mosdepth_data["svg"] = _make_coverage_svg(mosdepth_data["regions"])
-        elif mosdepth_data:
+        if mosdepth_data is None:
+            mosdepth_data = {"mean": None, "min": None, "max": None,
+                             "reference_length": None, "regions": []}
+        bed_regions = parse_mosdepth_bed(mosdepth_bed_by_gt.get(gt))
+        if bed_regions:
+            mosdepth_data["svg"] = _make_coverage_svg(bed_regions)
+        else:
             mosdepth_data["svg"] = ""
 
         # Variants
@@ -619,10 +663,10 @@ def build_json_summary(context: dict) -> dict:
             # Include minimal chain summaries
             hap_out["chains"] = [
                 {
-                    "chain_id":    c.get("chain_id"),
-                    "abundance":   c.get("abundance"),
-                    "total_length": c.get("total_length"),
-                    "n_windows":   c.get("n_windows"),
+                    "chain_id":    c.get("id") or c.get("chain_id"),
+                    "abundance":   c.get("abundance_lower_bound") or c.get("abundance"),
+                    "total_length": c.get("length_bp") or c.get("total_length"),
+                    "n_windows":   len(c.get("windows") or []) or c.get("n_windows"),
                 }
                 for c in (hap.get("chains") or [])
             ]
@@ -675,6 +719,8 @@ def parse_args() -> argparse.Namespace:
                         help="Path to host_stats.json")
     parser.add_argument("--mosdepth-summaries",  nargs="*", default=None,
                         help="Per-branch *.mosdepth.summary.txt files")
+    parser.add_argument("--mosdepth-beds",       nargs="*", default=None,
+                        help="Per-branch *.regions.bed.gz files (per-window coverage chart)")
     parser.add_argument("--variant-tsvs",        nargs="*", default=None,
                         help="Per-branch *_variants.tsv files")
     parser.add_argument("--flagstats",           nargs="*", default=None,

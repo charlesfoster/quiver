@@ -21,7 +21,8 @@
         2. MINIMAP2_CONSENSUS_MAP  — map per-genotype reads to dominant reference
         3. BCFTOOLS_CONSENSUS_CALL — call majority-allele variants
         4. MAKE_MASK_BED           — generate low-coverage mask BED via mosdepth
-        5. APPLY_CONSENSUS         — apply variants + mask, rename header, index
+        5. APPLY_CONSENSUS         — apply variants + mask, rename header
+        6. INDEX_CONSENSUS         — build samtools .fai and minimap2 .mmi indices
 
     Input channels:
         ch_branch  — [branch_meta, reads_fastq, dominant_ref_id]
@@ -51,11 +52,12 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-include { EXTRACT_REF             } from '../../modules/local/extract_ref'
-include { MINIMAP2_CONSENSUS_MAP  } from '../../modules/local/minimap2_consensus_map'
-include { BCFTOOLS_CONSENSUS_CALL } from '../../modules/local/bcftools_consensus_call'
-include { MAKE_MASK_BED           } from '../../modules/local/build_consensus_fasta'
-include { APPLY_CONSENSUS         } from '../../modules/local/build_consensus_fasta'
+include { EXTRACT_REF             } from '../../modules/local/extract_ref/main'
+include { MINIMAP2_CONSENSUS_MAP  } from '../../modules/local/minimap2_consensus_map/main'
+include { BCFTOOLS_CONSENSUS_CALL } from '../../modules/local/bcftools_consensus_call/main'
+include { MAKE_MASK_BED           } from '../../modules/local/make_mask_bed/main'
+include { APPLY_CONSENSUS         } from '../../modules/local/apply_consensus/main'
+include { INDEX_CONSENSUS         } from '../../modules/local/index_consensus/main'
 
 
 workflow BUILD_CONSENSUS {
@@ -146,7 +148,7 @@ workflow BUILD_CONSENSUS {
     ch_versions = ch_versions.mix(MAKE_MASK_BED.out.versions)
 
     // ----------------------------------------------------------------
-    // Step 5: Apply variants + mask, rename header, build indices.
+    // Step 5: Apply variants + mask, rename header.
     //
     // Join: ref_fasta + vcf (filtered) + vcf_csi + mask_bed.
     // All keyed by [meta.id, meta.genotype].
@@ -172,8 +174,19 @@ workflow BUILD_CONSENSUS {
     APPLY_CONSENSUS(ch_apply_input)
     ch_versions = ch_versions.mix(APPLY_CONSENSUS.out.versions)
 
+    // ----------------------------------------------------------------
+    // Step 6: Build samtools .fai and minimap2 .mmi indices.
+    //
+    // Input to INDEX_CONSENSUS:
+    //   tuple val(meta), path(consensus_fasta)
+    //
+    // Output: [meta, fasta, fai, mmi]
+    // ----------------------------------------------------------------
+    INDEX_CONSENSUS(APPLY_CONSENSUS.out.consensus)
+    ch_versions = ch_versions.mix(INDEX_CONSENSUS.out.versions)
+
     emit:
-    consensus        = APPLY_CONSENSUS.out.consensus         // [meta, fasta, fai, mmi]
-    low_cov_sentinel = APPLY_CONSENSUS.out.low_cov_sentinel  // [meta, sentinel] optional
+    consensus        = INDEX_CONSENSUS.out.consensus          // [meta, fasta, fai, mmi]
+    low_cov_sentinel = APPLY_CONSENSUS.out.low_cov_sentinel   // [meta, sentinel] optional
     versions         = ch_versions
 }

@@ -108,33 +108,11 @@ def validate_samplesheet(path: str) -> list[dict]:
 
             fastq_path = os.path.abspath(fastq_raw)
 
-            # 5. FASTQ file must exist
-            if not os.path.exists(fastq_path):
-                die(
-                    f"Row {row_num} (sample '{sample_id}'): FASTQ file does not exist: {fastq_path}"
-                )
+            # File existence / readability is intentionally NOT checked here.
+            # This script runs inside a container where host paths are not mounted;
+            # Nextflow's checkIfExists: true on the channel handles that on the host.
 
-            # 6. FASTQ file must be a regular file (not a directory, symlink to dir, etc.)
-            if not os.path.isfile(fastq_path):
-                die(
-                    f"Row {row_num} (sample '{sample_id}'): FASTQ path is not a regular file: {fastq_path}"
-                )
-
-            # 7. FASTQ must be readable
-            if not os.access(fastq_path, os.R_OK):
-                die(
-                    f"Row {row_num} (sample '{sample_id}'): FASTQ file is not readable: {fastq_path}"
-                )
-
-            # 8. FASTQ must not be empty (0 bytes)
-            fastq_size = os.path.getsize(fastq_path)
-            if fastq_size == 0:
-                die(
-                    f"Row {row_num} (sample '{sample_id}'): FASTQ file is empty (0 bytes): {fastq_path}\n"
-                    f"  Note: downstream processes will receive an EMPTY_INPUT sentinel for this sample."
-                )
-
-            # 9. Parse optional metadata JSON (if provided)
+            # 5. Parse optional metadata JSON (if provided)
             metadata: dict = {}
             if metadata_raw:
                 try:

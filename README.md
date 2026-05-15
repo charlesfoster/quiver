@@ -27,9 +27,9 @@ nextflow run main.nf -profile test --outdir results/test
 | Requirement | Minimum version | Notes |
 |---|---|---|
 | Nextflow | 24.10.5 | Install via `curl -s https://get.nextflow.io | bash` |
-| Docker | any recent | Required for `local` profile |
-| Singularity / Apptainer | any recent | Required for `katana` and `gadi` profiles |
-| conda / micromamba | micromamba ≥1.5 | Required for `conda_local` profile |
+| Docker | any recent | Required for `-profile docker` |
+| Singularity / Apptainer | any recent | Required for `-profile singularity` (HPC) |
+| conda or mamba | any recent | Required for `-profile conda` |
 
 Disk: allow approximately 3× the size of your input FASTQ files for intermediate BAMs plus final outputs.
 The DEVIDER container is the only custom-built image; all other tools use public biocontainers images.
@@ -55,13 +55,50 @@ Full schema details: [docs/configuration.md](docs/configuration.md).
 
 ## Profiles
 
-| Profile | Executor | Containers | Typical use |
-|---|---|---|---|
-| `local` | local | Docker (Rosetta on Apple Silicon) | Development and small runs on a Mac |
-| `conda_local` | local | conda/micromamba | Apple Silicon Mac without Docker, or Docker-free environments |
-| `katana` | SLURM | Singularity | UNSW Katana HPC |
-| `gadi` | SLURM | Singularity | NCI Gadi HPC (requires `--gadi_project`) |
-| `test` | local | Docker | CI and smoke testing |
+Container engine and executor are separate concerns — combine them as needed:
+
+| Profile | Role | Typical use |
+|---|---|---|
+| `docker` | Docker engine, local executor | Mac development (resource caps for M-series) |
+| `conda` | conda/mamba, local executor | Any platform without Docker/Singularity |
+| `singularity` | Singularity engine only | Combine with an HPC profile (see below) |
+| `katana` | SLURM executor, Katana resources | UNSW Katana HPC |
+| `gadi` | SLURM executor, Gadi resources | NCI Gadi HPC |
+| `test` | Bundled test data | CI and smoke testing |
+
+```bash
+# Mac with Docker
+nextflow run main.nf -profile docker --input samplesheet.csv --outdir results
+
+# Mac or Linux with conda
+nextflow run main.nf -profile conda --input samplesheet.csv --outdir results
+
+# Katana HPC
+nextflow run main.nf -profile singularity,katana --input samplesheet.csv --outdir results
+
+# Gadi HPC
+nextflow run main.nf -profile singularity,gadi --gadi_project <code> --input samplesheet.csv --outdir results
+```
+
+### Katana: specifying your account
+
+The `katana` profile defaults to `--account=oz000`. Override it per run on the command line:
+
+```bash
+nextflow run main.nf -profile singularity,katana \
+    -process.clusterOptions='--account=<your_account>' \
+    --input samplesheet.csv --outdir results
+```
+
+`-process.clusterOptions` is Nextflow's config-scope CLI override syntax (note the single dash, not `--`). It takes the highest precedence and requires no config file.
+
+For repeated use, add a one-line file (e.g. `~/.nextflow/config` or a local `my_account.config`):
+
+```groovy
+process.clusterOptions = '--account=<your_account>'
+```
+
+then pass it with `-c my_account.config`. A `~/.nextflow/config` is loaded automatically on every run without any `-c` flag.
 
 Invocation examples and per-profile notes: [docs/usage.md](docs/usage.md).
 

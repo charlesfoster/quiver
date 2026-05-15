@@ -1,0 +1,325 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "$id": "https://raw.githubusercontent.com/h2seq/hcv-quasi/main/nextflow_schema.json",
+  "title": "hcv-quasi pipeline parameters",
+  "description": "Nextflow DSL2 pipeline for HCV quasispecies inference from ONT PromethION sequencing. Performs genome-wide low-frequency variant calling and haplotype reconstruction, with automatic mixed-genotype detection and per-genotype branching.",
+  "type": "object",
+  "definitions": {
+    "input_output_options": {
+      "title": "Input/output options",
+      "type": "object",
+      "description": "Define where the pipeline should find input data and save outputs.",
+      "default": "",
+      "properties": {
+        "input": {
+          "type": "string",
+          "description": "Path to samplesheet CSV file with columns: sample_id, fastq, metadata_json.",
+          "format": "file-path",
+          "exists": true,
+          "pattern": "^\\S+\\.csv$"
+        },
+        "reference_panel": {
+          "type": "string",
+          "description": "Path to HCV reference panel FASTA file (238-sequence panel).",
+          "default": "${projectDir}/assets/hcv_references.fasta",
+          "format": "file-path"
+        },
+        "host_reference": {
+          "type": "string",
+          "description": "Path to human host reference FASTA (GRCh38 no-alt recommended) or minimap2 .mmi index.",
+          "format": "file-path"
+        },
+        "outdir": {
+          "type": "string",
+          "description": "The output directory where the results will be saved.",
+          "default": "results",
+          "format": "directory-path"
+        }
+      },
+      "required": ["input"]
+    },
+    "read_qc_filtering": {
+      "title": "Read QC and filtering",
+      "type": "object",
+      "description": "Parameters for raw read quality control and length/quality filtering via chopper.",
+      "default": "",
+      "properties": {
+        "min_length": {
+          "type": "integer",
+          "description": "Minimum read length in base pairs.",
+          "default": 200,
+          "minimum": 0
+        },
+        "max_length": {
+          "type": "integer",
+          "description": "Maximum read length in base pairs (HCV genome = 9,646 bp; reads >10 kb often chimeric).",
+          "default": 10000,
+          "minimum": 0
+        },
+        "min_qual": {
+          "type": "integer",
+          "description": "Minimum mean Phred quality score for read passing QC.",
+          "default": 8,
+          "minimum": 0
+        }
+      }
+    },
+    "genotyping_mixed_infection": {
+      "title": "Genotyping and mixed infection",
+      "type": "object",
+      "description": "Parameters for HCV genotype classification and mixed-infection detection.",
+      "default": "",
+      "properties": {
+        "min_secondary_fraction": {
+          "type": "number",
+          "description": "Fraction of reads required to declare a secondary major genotype (mixed infection). Below 5% is typically artefact; above 5% is biologically plausible.",
+          "default": 0.05,
+          "minimum": 0,
+          "maximum": 1
+        },
+        "ambiguous_delta_as": {
+          "type": "integer",
+          "description": "Alignment score gap (AS) between primary and secondary hit to flag a read as ambiguous.",
+          "default": 20,
+          "minimum": 0
+        },
+        "min_round1_mapped": {
+          "type": "integer",
+          "description": "Minimum number of primary-mapped reads in Round 1 panel map to proceed with genotyping.",
+          "default": 100,
+          "minimum": 0
+        }
+      }
+    },
+    "coverage_thresholds": {
+      "title": "Coverage thresholds",
+      "type": "object",
+      "description": "Coverage and depth requirements for consensus, variant calling, and haplotype reconstruction.",
+      "default": "",
+      "properties": {
+        "min_mean_coverage": {
+          "type": "integer",
+          "description": "Minimum mean coverage across the genome to proceed with downstream analysis.",
+          "default": 100,
+          "minimum": 0
+        },
+        "min_consensus_cov": {
+          "type": "integer",
+          "description": "Minimum per-position coverage to call a base in consensus (lower positions masked with N).",
+          "default": 10,
+          "minimum": 0
+        },
+        "min_variant_depth": {
+          "type": "integer",
+          "description": "Minimum depth (DP) at a position to attempt variant calling.",
+          "default": 20,
+          "minimum": 0
+        }
+      }
+    },
+    "variant_calling": {
+      "title": "Variant calling",
+      "type": "object",
+      "description": "Parameters for LoFreq and Clair3 variant detection and filtering.",
+      "default": "",
+      "properties": {
+        "min_call_af": {
+          "type": "number",
+          "description": "Minimum allele frequency for calling a variant (LoFreq internal threshold).",
+          "default": 0.005,
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min_report_af": {
+          "type": "number",
+          "description": "Minimum allele frequency to report a variant in final output.",
+          "default": 0.01,
+          "minimum": 0,
+          "maximum": 1
+        },
+        "min_mq": {
+          "type": "integer",
+          "description": "Minimum mapping quality (SAM MQ) for bases to be counted in variant calling.",
+          "default": 20,
+          "minimum": 0
+        },
+        "min_bq": {
+          "type": "integer",
+          "description": "Minimum base quality (Phred) for all bases in variant calling.",
+          "default": 7,
+          "minimum": 0
+        },
+        "min_alt_bq": {
+          "type": "integer",
+          "description": "Minimum base quality (Phred) for alternate-allele bases. Must be >= min_bq.",
+          "default": 7,
+          "minimum": 0
+        },
+        "lofreq_sig": {
+          "type": "number",
+          "description": "Bonferroni-corrected significance threshold for LoFreq variant calls.",
+          "default": 0.01,
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "depth_normalisation": {
+      "title": "Depth normalisation",
+      "type": "object",
+      "description": "Parameters for rasusa depth capping and random subsampling seeds.",
+      "default": "",
+      "properties": {
+        "lofreq_max_depth": {
+          "type": "integer",
+          "description": "Maximum depth for rasusa subsampling prior to LoFreq variant calling (sensitivity plateaus above this).",
+          "default": 5000,
+          "minimum": 0
+        },
+        "devider_max_depth": {
+          "type": "integer",
+          "description": "Maximum depth for rasusa subsampling prior to DEVIDER haplotype reconstruction (memory limit).",
+          "default": 1000,
+          "minimum": 0
+        },
+        "rasusa_seed_lofreq": {
+          "type": "integer",
+          "description": "Random seed for rasusa LoFreq subsampling (ensures reproducibility).",
+          "default": 42,
+          "minimum": 0
+        },
+        "rasusa_seed_devider": {
+          "type": "integer",
+          "description": "Random seed for rasusa DEVIDER subsampling (ensures reproducibility).",
+          "default": 43,
+          "minimum": 0
+        }
+      }
+    },
+    "haplotype_reconstruction": {
+      "title": "Haplotype reconstruction",
+      "type": "object",
+      "description": "Parameters for DEVIDER windowed haplotype calling and post-hoc stitching.",
+      "default": "",
+      "properties": {
+        "devider_min_cov": {
+          "type": "integer",
+          "description": "Minimum per-window coverage for DEVIDER to call haplotypes.",
+          "default": 50,
+          "minimum": 0
+        },
+        "devider_min_abund": {
+          "type": "number",
+          "description": "Minimum abundance (frequency) of a haplotype variant within a window for DEVIDER to report it.",
+          "default": 0.25,
+          "minimum": 0,
+          "maximum": 1
+        },
+        "stitch_min_reads": {
+          "type": "integer",
+          "description": "Minimum number of reads required to link two adjacent haplotypes in post-hoc stitching.",
+          "default": 5,
+          "minimum": 0
+        }
+      }
+    },
+    "optional_modules": {
+      "title": "Optional modules",
+      "type": "object",
+      "description": "Toggle optional analysis modules and fallback strategies.",
+      "default": "",
+      "properties": {
+        "run_clair3": {
+          "type": "boolean",
+          "description": "Run Clair3 for corroboration of variants called by LoFreq (AF >= 25%).",
+          "default": false
+        },
+        "allow_conda_fallback": {
+          "type": "boolean",
+          "description": "Allow conda environment fallback if container image fails to pull.",
+          "default": false
+        },
+        "use_hostile": {
+          "type": "boolean",
+          "description": "Use hostile instead of minimap2 for host read depletion (default: minimap2 vs GRCh38 no-alt).",
+          "default": false
+        },
+        "clair3_model_dir": {
+          "type": "string",
+          "description": "Path to custom Clair3 model directory (if null, uses Clair3 bundled default).",
+          "format": "file-path"
+        }
+      }
+    },
+    "max_resource_options": {
+      "title": "Max resource options",
+      "type": "object",
+      "description": "Maximum resource allocation for resource-intensive processes (LoFreq, DEVIDER, Clair3).",
+      "default": "",
+      "properties": {
+        "max_cpus": {
+          "type": "integer",
+          "description": "Maximum number of CPUs to allocate to a single task.",
+          "default": 16,
+          "minimum": 1
+        },
+        "max_memory": {
+          "type": "string",
+          "description": "Maximum memory to allocate to a single task (e.g. '64.GB').",
+          "default": "64.GB",
+          "pattern": "^[0-9]+(\\.[0-9]+)?\\s*(B|KB|MB|GB|TB)$"
+        },
+        "max_time": {
+          "type": "string",
+          "description": "Maximum wall-clock time per task (e.g. '24.h', '1440.m').",
+          "default": "24.h",
+          "pattern": "^[0-9]+(\\.[0-9]+)?\\s*(ms|s|m|h|d)$"
+        }
+      }
+    },
+    "institutional_config": {
+      "title": "Institutional config",
+      "type": "object",
+      "description": "Institution-specific configuration (e.g. HPC project codes).",
+      "default": "",
+      "properties": {
+        "gadi_project": {
+          "type": "string",
+          "description": "NCI Gadi HPC project code (required if running on Gadi; e.g. 'vm52')."
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "$ref": "#/definitions/input_output_options"
+    },
+    {
+      "$ref": "#/definitions/read_qc_filtering"
+    },
+    {
+      "$ref": "#/definitions/genotyping_mixed_infection"
+    },
+    {
+      "$ref": "#/definitions/coverage_thresholds"
+    },
+    {
+      "$ref": "#/definitions/variant_calling"
+    },
+    {
+      "$ref": "#/definitions/depth_normalisation"
+    },
+    {
+      "$ref": "#/definitions/haplotype_reconstruction"
+    },
+    {
+      "$ref": "#/definitions/optional_modules"
+    },
+    {
+      "$ref": "#/definitions/max_resource_options"
+    },
+    {
+      "$ref": "#/definitions/institutional_config"
+    }
+  ]
+}

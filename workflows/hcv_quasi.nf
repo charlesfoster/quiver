@@ -54,32 +54,32 @@
 // Module / subworkflow includes
 // ---------------------------------------------------------------------------
 
-include { INPUT_CHECK              } from '../modules/local/input_check'
+include { INPUT_CHECK              } from '../modules/local/input_check/main'
 include { RAW_QC                   } from '../subworkflows/local/raw_qc'
-include { CHOPPER                  } from '../modules/local/chopper'
-include { NANOQ as NANOQ_FILT      } from '../modules/local/nanoq'
-include { NANOQ as NANOQ_POSTHOST  } from '../modules/local/nanoq'
-include { INDEX_HOST               } from '../modules/local/index_host'
-include { HOST_DEPLETE_MINIMAP2    } from '../modules/local/host_deplete'
-include { HOST_DEPLETE_HOSTILE     } from '../modules/local/host_deplete'
-include { INDEX_PANEL              } from '../modules/local/index_panel'
-include { MINIMAP2_ROUND1          } from '../modules/local/minimap2_round1'
-include { GENOTYPE_CLASSIFY        } from '../modules/local/genotype_classify'
+include { CHOPPER                  } from '../modules/local/chopper/main'
+include { NANOQ as NANOQ_FILT      } from '../modules/local/nanoq/main'
+include { NANOQ as NANOQ_POSTHOST  } from '../modules/local/nanoq/main'
+include { INDEX_HOST               } from '../modules/local/index_host/main'
+include { HOST_DEPLETE_MINIMAP2    } from '../modules/local/host_deplete_minimap2/main'
+include { HOST_DEPLETE_HOSTILE     } from '../modules/local/host_deplete_hostile/main'
+include { INDEX_PANEL              } from '../modules/local/index_panel/main'
+include { MINIMAP2_ROUND1          } from '../modules/local/minimap2_round1/main'
+include { GENOTYPE_CLASSIFY        } from '../modules/local/genotype_classify/main'
 include { GENOTYPE_BRANCH          } from '../subworkflows/local/genotype_branch'
 include { BUILD_CONSENSUS          } from '../subworkflows/local/build_consensus'
-include { MINIMAP2_ROUND2          } from '../modules/local/minimap2_round2'
-include { MOSDEPTH                 } from '../modules/local/mosdepth'
+include { MINIMAP2_ROUND2          } from '../modules/local/minimap2_round2/main'
+include { MOSDEPTH                 } from '../modules/local/mosdepth/main'
 include { PREP_LOFREQ_INPUT        } from '../subworkflows/local/prep_lofreq_input'
-include { LOFREQ_CALL              } from '../modules/local/lofreq_call'
-include { VARIANT_FILTER           } from '../modules/local/variant_filter'
-include { CLAIR3                   } from '../modules/local/clair3'
+include { LOFREQ_CALL              } from '../modules/local/lofreq_call/main'
+include { VARIANT_FILTER           } from '../modules/local/variant_filter/main'
+include { CLAIR3                   } from '../modules/local/clair3/main'
 include { PREP_DEVIDER_INPUT       } from '../subworkflows/local/prep_devider_input'
-include { DEVIDER                  } from '../modules/local/devider'
-include { STITCH_HAPLOTYPES        } from '../modules/local/stitch_haplotypes'
-include { MAKE_ROUND2_MASK;
-          BUILD_ROUND2_CONSENSUS   } from '../modules/local/build_round2_consensus'
-include { SAMPLE_REPORT            } from '../modules/local/sample_report'
-include { MULTIQC                  } from '../modules/local/multiqc'
+include { DEVIDER                  } from '../modules/local/devider/main'
+include { STITCH_HAPLOTYPES        } from '../modules/local/stitch_haplotypes/main'
+include { MAKE_ROUND2_MASK         } from '../modules/local/make_round2_mask/main'
+include { BUILD_ROUND2_CONSENSUS   } from '../modules/local/build_round2_consensus/main'
+include { SAMPLE_REPORT            } from '../modules/local/sample_report/main'
+include { MULTIQC                  } from '../modules/local/multiqc/main'
 
 
 // ---------------------------------------------------------------------------
@@ -103,7 +103,7 @@ process DUMP_SOFTWARE_VERSIONS {
 
     tag 'software_versions'
 
-    container 'python:3.11-slim'
+    container 'python:3.11'
     conda 'conda-forge::python=3.11'
 
     publishDir (
@@ -154,7 +154,7 @@ process RENDER_RUN_SUMMARY {
 
     tag 'run_summary'
 
-    container 'python:3.11-slim'
+    container 'python:3.11'
     conda 'conda-forge::python=3.11 conda-forge::jinja2'
 
     publishDir (
@@ -200,7 +200,7 @@ process EMIT_FAILURE_FLAG {
 
     tag "${meta.id}"
 
-    container 'python:3.11-slim'
+    container 'python:3.11'
     conda 'conda-forge::python=3.11'
 
     publishDir (
@@ -246,6 +246,33 @@ workflow HCV_QUASI {
     // ---------------------------------------------------------------------
     ch_versions = Channel.empty()
 
+    // =====================================================================
+    // Parameter validation
+    // =====================================================================
+    if (!params.input) {
+        error "Required parameter --input (samplesheet CSV) is not set."
+    }
+    if (params.min_bq > params.min_alt_bq) {
+        error "Parameter error: --min_bq (${params.min_bq}) must be <= --min_alt_bq (${params.min_alt_bq}). " +
+              "LoFreq requires that the general base-quality floor (Q) does not exceed " +
+              "the alternate-allele base-quality floor (q)."
+    }
+    if (params.min_length >= params.max_length) {
+        error "Parameter error: --min_length (${params.min_length}) must be < --max_length (${params.max_length})."
+    }
+    if (params.min_qual < 0) {
+        error "Parameter error: --min_qual (${params.min_qual}) must be >= 0."
+    }
+    if (params.lofreq_sig <= 0 || params.lofreq_sig > 1) {
+        error "Parameter error: --lofreq_sig (${params.lofreq_sig}) must be in the range (0, 1]."
+    }
+    if (params.devider_min_abund <= 0 || params.devider_min_abund >= 1) {
+        error "Parameter error: --devider_min_abund (${params.devider_min_abund}) must be in the range (0, 1)."
+    }
+    if (params.min_secondary_fraction < 0 || params.min_secondary_fraction >= 1) {
+        error "Parameter error: --min_secondary_fraction (${params.min_secondary_fraction}) must be in the range [0, 1)."
+    }
+
 
     // =====================================================================
     // Step 5.1 — INPUT_CHECK
@@ -263,7 +290,7 @@ workflow HCV_QUASI {
             def records = new groovy.json.JsonSlurper().parse(json_path.newReader())
             records.collect { rec ->
                 def meta = [
-                    id:       rec.sample_id as String,
+                    id:       rec.id as String,
                     metadata: rec.metadata ?: [:],
                 ]
                 tuple(meta, file(rec.fastq as String, checkIfExists: true))
@@ -594,6 +621,10 @@ workflow HCV_QUASI {
         .map { meta, f -> tuple(meta.id, f) }
         .groupTuple(by: 0)
 
+    ch_mosdepth_bed_by_sample = MOSDEPTH.out.regions
+        .map { meta, f -> tuple(meta.id, f) }
+        .groupTuple(by: 0)
+
     ch_variants_by_sample = VARIANT_FILTER.out.tsv
         .map { meta, f -> tuple(meta.id, f) }
         .groupTuple(by: 0)
@@ -616,8 +647,11 @@ workflow HCV_QUASI {
     ch_nanoq_filt_by_sample= NANOQ_FILT.out.json.map            { meta, j -> tuple(meta.id, j) }
     ch_host_stats_by_sample= ch_host_stats.map                  { meta, j -> tuple(meta.id, j) }
 
-    // Recover meta from the genotype_summary channel — guaranteed one per sample.
-    ch_meta_keyed = GENOTYPE_CLASSIFY.out.summary.map { meta, j -> tuple(meta.id, meta) }
+    // Recover meta from ch_reads — always populated for every sample regardless
+    // of whether downstream processes (genotype classify, etc.) completed.
+    // Using ch_reads as the base ensures the report join chain always has a
+    // non-empty starting channel, preventing null-collapse in remainder joins.
+    ch_meta_keyed = ch_reads.map { meta, fastq -> tuple(meta.id, meta) }
 
     // Samples short-circuited before genotype classify (NO_HCV / ALL_READS_FILTERED)
     // are NOT joined into the SAMPLE_REPORT input — they have no genotype summary
@@ -637,21 +671,23 @@ workflow HCV_QUASI {
         .join(ch_nanoq_raw_by_sample,  by: 0, remainder: true)
         .join(ch_nanoq_filt_by_sample, by: 0, remainder: true)
         .join(ch_host_stats_by_sample, by: 0, remainder: true)
-        .join(ch_mosdepth_by_sample,   by: 0, remainder: true)
-        .join(ch_variants_by_sample,   by: 0, remainder: true)
-        .join(ch_flagstat_by_sample,   by: 0, remainder: true)
-        .join(ch_stitch_by_sample,     by: 0, remainder: true)
-        .join(ch_nanoplot_by_sample,   by: 0, remainder: true)
+        .join(ch_mosdepth_by_sample,     by: 0, remainder: true)
+        .join(ch_mosdepth_bed_by_sample, by: 0, remainder: true)
+        .join(ch_variants_by_sample,     by: 0, remainder: true)
+        .join(ch_flagstat_by_sample,     by: 0, remainder: true)
+        .join(ch_stitch_by_sample,       by: 0, remainder: true)
+        .join(ch_nanoplot_by_sample,     by: 0, remainder: true)
         .map { sid, meta, summary, nanoq_raw, nanoq_filt, host_stats,
-               mosdepth_files, variant_tsvs, flagstat_files,
+               mosdepth_files, mosdepth_beds, variant_tsvs, flagstat_files,
                stitch_reports, nanoplot_dirs ->
             tuple(
                 meta,
-                summary       ?: [],
-                nanoq_raw     ?: [],
-                nanoq_filt    ?: [],
-                host_stats    ?: [],
+                summary        ?: [],
+                nanoq_raw      ?: [],
+                nanoq_filt     ?: [],
+                host_stats     ?: [],
                 mosdepth_files ?: [],
+                mosdepth_beds  ?: [],
                 variant_tsvs   ?: [],
                 flagstat_files ?: [],
                 stitch_reports ?: [],
@@ -661,7 +697,7 @@ workflow HCV_QUASI {
         }
         // Drop samples with no genotype summary (NO_HCV_DETECTED short-circuits).
         // Those samples get a PIPELINE_FLAG.txt via EMIT_FAILURE_FLAG instead.
-        .filter { meta, summary, _na, _nf, _hs, _md, _vt, _fs, _sr, _np, _ff ->
+        .filter { meta, summary, _na, _nf, _hs, _md, _mb, _vt, _fs, _sr, _np, _ff ->
             summary != null && !(summary instanceof List && summary.isEmpty())
         }
 

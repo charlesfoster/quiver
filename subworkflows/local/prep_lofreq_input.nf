@@ -47,9 +47,9 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-include { RASUSA             } from '../../modules/local/rasusa'
-include { MINIMAP2_ROUND2    } from '../../modules/local/minimap2_round2'
-include { LOFREQ_PREPROCESS  } from '../../modules/local/lofreq_preprocess'
+include { RASUSA             } from '../../modules/local/rasusa/main'
+include { MINIMAP2_ROUND2    } from '../../modules/local/minimap2_round2/main'
+include { LOFREQ_PREPROCESS  } from '../../modules/local/lofreq_preprocess/main'
 
 
 workflow PREP_LOFREQ_INPUT {
