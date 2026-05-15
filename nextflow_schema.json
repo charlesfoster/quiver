@@ -208,6 +208,12 @@
       "description": "Parameters for DEVIDER windowed haplotype calling and post-hoc stitching.",
       "default": "",
       "properties": {
+        "devider_min_read_length": {
+          "type": "integer",
+          "description": "Minimum read length (bp) retained for DEVIDER input. Applied before rasusa_aln subsampling so the depth cap is drawn from long reads only. Short reads spanning few SNPs fragment the assembly graph without contributing phasing information.",
+          "default": 2000,
+          "minimum": 0
+        },
         "devider_min_cov": {
           "type": "integer",
           "description": "Minimum per-window coverage for DEVIDER to call haplotypes.",

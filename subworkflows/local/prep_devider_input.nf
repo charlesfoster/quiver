@@ -60,8 +60,9 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-include { RASUSA_ALN         } from '../../modules/local/rasusa_aln/main'
-include { LOFREQ_PREPROCESS  } from '../../modules/local/lofreq_preprocess/main'
+include { SAMTOOLS_LENGTH_FILTER } from '../../modules/local/samtools_length_filter/main'
+include { RASUSA_ALN             } from '../../modules/local/rasusa_aln/main'
+include { LOFREQ_PREPROCESS      } from '../../modules/local/lofreq_preprocess/main'
 
 
 workflow PREP_DEVIDER_INPUT {
@@ -74,7 +75,25 @@ workflow PREP_DEVIDER_INPUT {
     ch_versions = Channel.empty()
 
     // ----------------------------------------------------------------
-    // Step 1: Subsample the full-depth BAM to params.devider_max_depth.
+    // Step 1: Filter reads shorter than params.devider_min_read_length.
+    //
+    // Short reads span too few SNPs to contribute phasing information to
+    // DEVIDER's de Bruijn graph.  Removing them before subsampling ensures
+    // the depth cap (Step 2) is drawn exclusively from reads long enough
+    // to link adjacent SNP positions.
+    //
+    // Default: 2,000 bp — spans ~6 SNPs given HCV's ~357 bp inter-SNP
+    // spacing, producing well-connected graph edges.
+    // ----------------------------------------------------------------
+    ch_length_filter_input = ch_input.map { meta, bam, bai, consensus_fasta ->
+        tuple(meta, bam, bai, params.devider_min_read_length)
+    }
+
+    SAMTOOLS_LENGTH_FILTER(ch_length_filter_input)
+    ch_versions = ch_versions.mix(SAMTOOLS_LENGTH_FILTER.out.versions)
+
+    // ----------------------------------------------------------------
+    // Step 2: Subsample the length-filtered BAM to params.devider_max_depth.
     //
     // RASUSA_ALN expects:
     //   tuple val(meta), path(bam), path(bai), val(coverage), val(seed)
@@ -83,7 +102,7 @@ workflow PREP_DEVIDER_INPUT {
     // default 43 vs. LoFreq default 42) ensures the two subsampled sets are
     // statistically independent.
     // ----------------------------------------------------------------
-    ch_rasusa_input = ch_input.map { meta, bam, bai, consensus_fasta ->
+    ch_rasusa_input = SAMTOOLS_LENGTH_FILTER.out.bam.map { meta, bam, bai ->
         tuple(meta, bam, bai, params.devider_max_depth, params.rasusa_seed_devider)
     }
 
@@ -91,7 +110,7 @@ workflow PREP_DEVIDER_INPUT {
     ch_versions = ch_versions.mix(RASUSA_ALN.out.versions)
 
     // ----------------------------------------------------------------
-    // Step 2: Run LoFreq preprocessing on the subsampled BAM.
+    // Step 3: Run LoFreq preprocessing on the subsampled BAM.
     //
     // LOFREQ_PREPROCESS expects:
     //   tuple val(meta), path(bam), path(bai), path(ref_fasta)
