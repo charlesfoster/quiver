@@ -10,7 +10,7 @@
                                  reads to params.lofreq_max_depth.
             2. MINIMAP2_ROUND2 — remap the subsampled reads to the per-genotype
                                  consensus (reuses the Round 2 mapping module).
-            3. LOFREQ_PREPROCESS — run lofreq indelqual --dindel + lofreq alnqual on
+            3. LOFREQ_PREPROCESS — run lofreq indelqual --dindel on
                                    the subsampled BAM.
 
     Why subsample before variant calling (CLAUDE.md D10, docs/architecture_reasoning.md §8):
@@ -122,7 +122,7 @@ workflow PREP_LOFREQ_INPUT {
     //   tuple val(meta), path(bam), path(bai), path(ref_fasta)
     //
     // Join the remapped BAM with the consensus FASTA (needed as the
-    // -f reference for lofreq indelqual and alnqual).
+    // -f reference for lofreq indelqual).
     // ----------------------------------------------------------------
     ch_consensus_fasta = ch_input.map { meta, reads, consensus_fasta, consensus_fai, consensus_mmi ->
         tuple([meta.id, meta.genotype], consensus_fasta)

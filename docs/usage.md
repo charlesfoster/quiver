@@ -17,9 +17,9 @@ For parameter descriptions see [docs/parameters.md](parameters.md).
   ```
 
 - **Container runtime or conda** — choose one depending on your environment:
-  - Docker (any recent version) — required for `local` profile.
+  - Docker (any recent version) — required for `docker` and `docker_mac` profiles.
   - Singularity / Apptainer — required for `katana` and `gadi` profiles.
-  - conda with micromamba ≥ 1.5 — required for `conda_local` profile.
+  - conda with micromamba ≥ 1.5 — required for `conda` profile.
 
 - **Host reference genome** (GRCh38 no-alt) for host depletion:
 
@@ -32,6 +32,7 @@ For parameter descriptions see [docs/parameters.md](parameters.md).
 
   Pass this path via `--host_reference /reference/GRCh38.fa.gz`.
   The pipeline builds a minimap2 index on first use and caches it.
+  This is an explicit local path; the pipeline does not currently auto-download GRCh38.
 
 ---
 
@@ -39,25 +40,37 @@ For parameter descriptions see [docs/parameters.md](parameters.md).
 
 Select a profile with `-profile <name>`. Profiles are defined in `conf/` and documented in [docs/configuration.md](configuration.md).
 
-### `local` — Mac or Linux workstation with Docker
+### `docker` — Mac or Linux workstation with Docker
 
-Runs all processes locally using Docker. On Apple Silicon, x86 containers run under Rosetta 2 (approximately 30–50% slower than native). Suitable for development and small datasets.
+Runs all processes locally using Docker. Suitable for development and small datasets.
 
 ```bash
 nextflow run main.nf \
-    -profile local \
+    -profile docker \
     --input samplesheet.csv \
     --host_reference /path/to/GRCh38.fa.gz \
     --outdir results/run1
 ```
 
-### `conda_local` — Mac or Linux without Docker
+### `docker_mac` — Apple Silicon Docker
 
-Uses micromamba to resolve the conda environment defined in `env/hcv-quasi.yml`. Preferred for Apple Silicon production runs where Rosetta overhead is unacceptable.
+Runs locally using Docker Desktop on Apple Silicon. This inherits the Docker profile but sets LoFreq to serial calling to avoid `lofreq call-parallel` OOM/SIGKILL failures under amd64 emulation.
 
 ```bash
 nextflow run main.nf \
-    -profile conda_local \
+    -profile docker_mac \
+    --input samplesheet.csv \
+    --host_reference /path/to/GRCh38.fa.gz \
+    --outdir results/run1
+```
+
+### `conda` — Mac or Linux without Docker
+
+Uses micromamba to resolve the conda environments. Preferred when Docker/Singularity is not available.
+
+```bash
+nextflow run main.nf \
+    -profile conda \
     --input samplesheet.csv \
     --host_reference /path/to/GRCh38.fa.gz \
     --outdir results/run1
@@ -124,7 +137,7 @@ For manual validation after installation:
 
 ```bash
 nextflow run main.nf \
-    -profile local \
+    -profile docker \
     --input samplesheet.csv \
     --reference_panel assets/hcv_references.fasta \
     --host_reference /path/to/GRCh38.fa.gz \
@@ -141,7 +154,7 @@ Validation criteria: variants at known polymorphic positions called within ±2% 
 Nextflow caches completed process outputs by content hash. Use `-resume` to skip already-completed steps:
 
 ```bash
-nextflow run main.nf -profile local --input samplesheet.csv --outdir results/run1 -resume
+nextflow run main.nf -profile docker --input samplesheet.csv --outdir results/run1 -resume
 ```
 
 The work directory (default `./work/`) must still exist. Delete it to force a full re-run.
@@ -153,7 +166,7 @@ The work directory (default `./work/`) must still exist. Delete it to force a fu
 Override resource ceilings at the command line:
 
 ```bash
-nextflow run main.nf -profile local \
+nextflow run main.nf -profile docker \
     --max_cpus 8 \
     --max_memory '32.GB' \
     --max_time '12.h' \
@@ -187,4 +200,4 @@ DEVIDER failure is non-fatal. The pipeline emits a `devider.failed` marker in th
 
 ### Container pull failure
 
-By default, failed container pulls are retried once. Set `params.allow_conda_fallback = true` (or use `-profile conda_local`) to fall back to conda. On Apple Silicon, if an x86 image is required and Docker is configured with Rosetta, the pull should succeed but will run under emulation.
+By default, failed container pulls are retried once. Set `params.allow_conda_fallback = true` (or use `-profile conda`) to fall back to conda. On Apple Silicon, if an x86 image is required and Docker is configured with Rosetta, the pull should succeed but will run under emulation.

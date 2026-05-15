@@ -90,7 +90,7 @@ def load_sample_json(path: Path) -> dict | None:
         return None
 
 
-def extract_sample_row(data: dict, report_dir: str | None) -> dict:
+def extract_sample_row(data: dict) -> dict:
     """Build a flat row dict for the run summary table."""
     sid = data.get("sample_id", "unknown")
     status = data.get("overall_status", "UNKNOWN")
@@ -115,17 +115,11 @@ def extract_sample_row(data: dict, report_dir: str | None) -> dict:
 
     mean_cov = round(sum(cov_values) / len(cov_values), 1) if cov_values else None
 
-    # Build relative link to per-sample report
-    report_link: str | None = None
-    if report_dir:
-        candidate = Path(report_dir) / sid / "reports" / f"{sid}_summary.html"
-        if candidate.exists():
-            report_link = str(candidate)
-        else:
-            # Emit the expected path even if file not yet present
-            report_link = f"{sid}/reports/{sid}_summary.html"
-    else:
-        report_link = f"{sid}_summary.html"
+    # Build relative link to per-sample report.
+    # run_summary.html lives in <outdir>/reports/; sample reports live in
+    # <outdir>/<sample_id>/reports/ — so the relative path is always one
+    # directory up, then into the sample's reports/ subdirectory.
+    report_link = f"../{sid}/reports/{sid}_summary.html"
 
     return {
         "sample_id":               sid,
@@ -505,11 +499,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-html",        required=True)
     parser.add_argument("--output-json",        required=True)
     parser.add_argument("--pipeline-version",   default=None)
-    parser.add_argument(
-        "--report-dir",
-        default=None,
-        help="Base directory for constructing relative links to per-sample reports",
-    )
     return parser.parse_args()
 
 
@@ -526,7 +515,7 @@ def main() -> None:
         if data is None:
             print(f"WARNING: Skipping unreadable JSON: {p}", file=sys.stderr)
             continue
-        rows.append(extract_sample_row(data, args.report_dir))
+        rows.append(extract_sample_row(data))
 
     if not rows:
         print("ERROR: No valid per-sample JSON files were loaded.", file=sys.stderr)

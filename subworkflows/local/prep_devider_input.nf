@@ -11,7 +11,7 @@
                                  reads to params.devider_max_depth.
             2. MINIMAP2_ROUND2 — remap the subsampled reads to the per-genotype
                                  consensus (reuses the Round 2 mapping module).
-            3. LOFREQ_PREPROCESS — run lofreq indelqual --dindel + lofreq alnqual on
+            3. LOFREQ_PREPROCESS — run lofreq indelqual --dindel on
                                    the subsampled BAM.
 
     Why subsample before DEVIDER (CLAUDE.md D10, D11, docs/architecture_reasoning.md §9):
@@ -28,8 +28,8 @@
         DEVIDER phases over existing SNPs supplied via the input VCF; it does not
         call variants itself.  However, quality-calibrated BAMs improve DEVIDER's
         internal read-to-haplotype assignment because the tool uses base quality
-        information when computing assignment likelihoods.  Using the same indelqual +
-        alnqual preprocessing chain as LoFreq ensures the BAM qualities are consistent
+        information when computing assignment likelihoods.  Using the same indelqual
+        preprocessing chain as LoFreq ensures the BAM qualities are consistent
         with those used to produce the filtered VCF that DEVIDER consumes.
 
     The MINIMAP2_ROUND2 module is re-used here with subsampled reads.  Its output
@@ -136,7 +136,7 @@ workflow PREP_DEVIDER_INPUT {
     //   tuple val(meta), path(bam), path(bai), path(ref_fasta)
     //
     // Join the remapped BAM with the consensus FASTA (needed as the
-    // -f reference for lofreq indelqual and alnqual).
+    // -f reference for lofreq indelqual).
     // ----------------------------------------------------------------
     ch_consensus_fasta = ch_input.map { meta, reads, consensus_fasta, consensus_fai, consensus_mmi ->
         tuple([meta.id, meta.genotype], consensus_fasta)

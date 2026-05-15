@@ -4,20 +4,23 @@
 
     Purpose:
         Implements Step 5.15 of the data flow specification.  Calls SNVs and indels
-        in the preprocessed, depth-capped BAM using LoFreq's parallel caller.
+        in the preprocessed, depth-capped BAM using LoFreq.  Parallel calling is
+        enabled only when params.lofreq_pp_threads > 1.
 
     Scientific rationale (CLAUDE.md D9, docs/architecture_reasoning.md §7):
         LoFreq is the primary variant caller for this pipeline.  It was designed for
         low-allele-frequency detection with rigorous Bonferroni/FDR control.  The
-        ONT preprocessing chain (indelqual + alnqual) from LOFREQ_PREPROCESS closes
-        the gap between LoFreq's Illumina-oriented model and ONT error profiles.
+        ONT preprocessing chain from LOFREQ_PREPROCESS adds indel qualities
+        so LoFreq can use its indel model on ONT reads.
         See D9 for the full justification.
 
     Key flags:
-        call-parallel   Multi-threaded caller (threads via --pp-threads, not --threads).
-        --pp-threads N  Capped at min(task.cpus, 8).  Note: --threads is a different
-                        flag controlling pre-processing; --pp-threads controls the
-                        parallel calling pool.
+        lofreq call     Serial caller. Used when params.lofreq_pp_threads <= 1,
+                        including the docker_mac profile.
+        call-parallel   Multi-process caller. Used when params.lofreq_pp_threads > 1.
+        --pp-threads N  Capped at min(task.cpus, params.lofreq_pp_threads). Note:
+                        --threads is a different flag controlling pre-processing;
+                        --pp-threads controls the parallel calling pool.
         --call-indels   Enables indel calling.  Requires BI/BD tags in the BAM
                         (provided by lofreq indelqual --dindel in LOFREQ_PREPROCESS).
                         Must be explicit — LoFreq defaults to SNV-only.
@@ -54,7 +57,7 @@
 
     Inputs:
         meta        — val map with `id` and `genotype` fields
-        bam         — preprocessed BAM from LOFREQ_PREPROCESS (indelqual + alnqual)
+        bam         — preprocessed BAM from LOFREQ_PREPROCESS (indelqual)
         bai         — BAM index
         ref_fasta   — per-genotype consensus FASTA
 
@@ -63,7 +66,8 @@
         versions    — versions.yml
 
     Container: quay.io/biocontainers/lofreq:2.1.5--py310h4966b78_15
-    Label: process_high (16 CPU, memory = null via modules.config, 12 h).
+    Label: process_high (16 CPU by default, memory = null via modules.config, 12 h).
+           docker_mac overrides this to 1 CPU / maxForks 1.
 
     Output published to:
         ${params.outdir}/${meta.id}/variants/${meta.genotype}/
@@ -104,17 +108,32 @@ process LOFREQ_CALL {
     REF_ABS=\$(pwd)/ref.fasta
     BAM_ABS=\$(readlink -f ${bam})
 
-    lofreq call-parallel \\
-        --pp-threads \$(( ${task.cpus} < 8 ? ${task.cpus} : 8 )) \\
-        --call-indels \\
-        --min-mq ${params.min_mq} \\
-        --min-bq ${params.min_bq} \\
-        --min-alt-bq ${params.min_alt_bq} \\
-        --sig ${params.lofreq_sig} \\
-        --min-cov 1 \\
-        -f "\${REF_ABS}" \\
-        -o ${meta.id}_${meta.genotype}_lofreq.vcf \\
-        "\${BAM_ABS}"
+    LOFREQ_PP_THREADS=\$(( ${params.lofreq_pp_threads} < ${task.cpus} ? ${params.lofreq_pp_threads} : ${task.cpus} ))
+
+    if [ "\${LOFREQ_PP_THREADS}" -gt 1 ]; then
+        lofreq call-parallel \\
+            --pp-threads "\${LOFREQ_PP_THREADS}" \\
+            --call-indels \\
+            --min-mq ${params.min_mq} \\
+            --min-bq ${params.min_bq} \\
+            --min-alt-bq ${params.min_alt_bq} \\
+            --sig ${params.lofreq_sig} \\
+            --min-cov 1 \\
+            -f "\${REF_ABS}" \\
+            -o ${meta.id}_${meta.genotype}_lofreq.vcf \\
+            "\${BAM_ABS}"
+    else
+        lofreq call \\
+            --call-indels \\
+            --min-mq ${params.min_mq} \\
+            --min-bq ${params.min_bq} \\
+            --min-alt-bq ${params.min_alt_bq} \\
+            --sig ${params.lofreq_sig} \\
+            --min-cov 1 \\
+            -f "\${REF_ABS}" \\
+            -o ${meta.id}_${meta.genotype}_lofreq.vcf \\
+            "\${BAM_ABS}"
+    fi
 
     # ----------------------------------------------------------------
     # Compress and index — produces the canonical .vcf.gz + .tbi pair

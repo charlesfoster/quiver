@@ -16,11 +16,10 @@
                         selecting the best primary; together with --secondary=no
                         this achieves competitive mapping: the scorer considers
                         multiple references but the BAM carries only the winner.
-        -Y              Soft-clip supplementary alignments — required by LoFreq
-                        (hard clipping corrupts its per-base quality recalibration).
+        -Y              Soft-clip supplementary alignments — retained for LoFreq
+                        compatibility.
         --MD            Emit the MD tag (mismatch string) for IGV and LoFreq.
-        --eqx           Use =/X CIGAR ops instead of M — required by LoFreq's
-                        alnqual step.
+        --eqx           Use =/X CIGAR ops instead of M for downstream inspection.
         -R              Read group tag — LoFreq errors without it.
 
     Pipeline:

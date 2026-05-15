@@ -14,9 +14,9 @@
         assignment.  Round 2 maps against a single per-genotype consensus, so those
         flags would either be no-ops or harmful (secondary suppression has no meaning
         with a single reference).  All other flags are retained:
-            -Y      soft-clip supplementary — required by LoFreq indelqual/alnqual
+            -Y      soft-clip supplementary — required by LoFreq indelqual
             --MD    MD mismatch tag for IGV and LoFreq
-            --eqx   =/X CIGAR ops — required by LoFreq alnqual and bcftools
+            --eqx   =/X CIGAR ops — useful for bcftools and inspection
             -R      read group — required by LoFreq (errors without it)
 
     Mapping quality check:
@@ -101,8 +101,8 @@ process MINIMAP2_ROUND2 {
     #     competitive multi-reference mapping.
     # Retained flags:
     #   -Y   soft-clip supplementary (required by LoFreq)
-    #   --MD mismatch tag (LoFreq alnqual + IGV)
-    #   --eqx =/X CIGAR (LoFreq alnqual + bcftools)
+    #   --MD mismatch tag (IGV)
+    #   --eqx =/X CIGAR (bcftools and inspection)
     #   -R   read group (LoFreq errors without it)
     #
     # Pipe directly to samtools sort — no intermediate SAM on disk.

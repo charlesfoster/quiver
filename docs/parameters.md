@@ -15,7 +15,7 @@ To set many parameters for a site, write a params JSON file and pass it with `-p
 |---|---|---|---|---|
 | `--input` | path | required | Path to the samplesheet CSV. Must contain `sample_id`, `fastq`, and optionally `metadata_json` columns. | Always required. |
 | `--reference_panel` | path | `assets/hcv_references.fasta` | HCV reference panel FASTA (238 sequences). Used for Round 1 competitive mapping and genotype classification. | Replace with a custom panel if working with non-standard genotypes or if the bundled panel is updated. |
-| `--host_reference` | path | null (required) | Path to GRCh38 no-alt FASTA or a pre-built minimap2 `.mmi` index. Providing a pre-built `.mmi` skips indexing and saves ~10 min per run. | Always required unless the samples contain no human DNA (e.g., cell-culture only). |
+| `--host_reference` | path | null (required) | Path to a local GRCh38 no-alt FASTA or a pre-built minimap2 `.mmi` index. Providing a pre-built `.mmi` skips indexing and saves ~10 min per run. | Always required unless the samples contain no human DNA (e.g., cell-culture only). |
 | `--outdir` | path | `results` | Output directory. Created if it does not exist. | Change to avoid overwriting a previous run. |
 
 ---
@@ -56,10 +56,11 @@ To set many parameters for a site, write a params JSON file and pass it with `-p
 |---|---|---|---|---|
 | `--min_call_af` | float | `0.005` | LoFreq lower-bound allele frequency for raw variant calls (0.5%). All calls above this threshold are emitted to `lofreq.vcf.gz`. | Decrease to 0.001 only if ultra-low-frequency variants are required; increases false-positive burden. |
 | `--min_report_af` | float | `0.01` | Reporting AF threshold (1%). Applied by the variant filter step to produce `lofreq.filtered.vcf.gz`. | Increase to 0.02–0.05 for conservative clinical reporting. |
-| `--min_mq` | integer | `20` | Minimum mapping quality for reads contributing to variant calls (`lofreq call-parallel --min-mq`). | Increase to 30 for stricter calls at the cost of read yield. |
-| `--min_bq` | integer | `7` | Minimum base quality for variant calls (`lofreq call-parallel --min-bq`). | Rarely need changing for R10.4.1 data with HAC basecalls. |
-| `--min_alt_bq` | integer | `7` | Minimum base quality for alt variant calls (`lofreq call-parallel --min-alt-bq`). | Rarely need changing for R10.4.1 data with HAC basecalls. |
+| `--min_mq` | integer | `20` | Minimum mapping quality for reads contributing to LoFreq variant calls. | Increase to 30 for stricter calls at the cost of read yield. |
+| `--min_bq` | integer | `7` | Minimum base quality for LoFreq variant calls. | Rarely need changing for R10.4.1 data with HAC basecalls. |
+| `--min_alt_bq` | integer | `7` | Minimum base quality for LoFreq alternate-allele calls. | Rarely need changing for R10.4.1 data with HAC basecalls. |
 | `--lofreq_sig` | float | `0.01` | LoFreq strand-bias significance threshold. | Lower to 0.001 if strand-biased false positives are a concern (e.g., known problematic homopolymers). |
+| `--lofreq_pp_threads` | integer | `8` | Number of LoFreq `call-parallel` workers. Values of 1 use serial `lofreq call`; the `docker_mac` profile sets this to 1. | Lower to 1 on Apple Silicon Docker or other environments where `call-parallel` is unstable. |
 
 ---
 
@@ -89,7 +90,7 @@ To set many parameters for a site, write a params JSON file and pass it with `-p
 | Parameter | Type | Default | Description | When to change |
 |---|---|---|---|---|
 | `--run_clair3` | boolean | `false` | Enable optional Clair3 corroboration calling (AF ≥ 25%). Adds significant runtime and disk usage. Outputs written to `variants/<GT>/clair3/`. | Enable when independent corroboration of high-AF variants is required. |
-| `--allow_conda_fallback` | boolean | `false` | Allow conda/micromamba to resolve environments when a container is unavailable. Required if Docker/Singularity is not available on the system. | Enable when running on systems without container support. Prefer the `conda_local` profile for a fully conda-native run. |
+| `--allow_conda_fallback` | boolean | `false` | Allow conda/micromamba to resolve environments when a container is unavailable. Required if Docker/Singularity is not available on the system. | Enable when running on systems without container support. Prefer the `conda` profile for a fully conda-native run. |
 | `--use_hostile` | boolean | `false` | Use the `hostile` tool instead of raw minimap2 for host depletion. `hostile` is a thin wrapper around minimap2 with additional host-database options. | Enable if a specific hostile database is preferred over GRCh38. |
 
 ---

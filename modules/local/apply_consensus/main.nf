@@ -44,7 +44,7 @@ process APPLY_CONSENSUS {
     publishDir (
         path: { "${params.outdir}/${meta.id}/consensus/${meta.genotype}/" },
         mode: 'copy',
-        pattern: { "${meta.id}_${meta.genotype}_consensus.*" }
+        pattern: '*_consensus.fasta'
     )
 
     input:

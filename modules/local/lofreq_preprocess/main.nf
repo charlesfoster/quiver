@@ -1,36 +1,26 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     LOFREQ_PREPROCESS — Prepare a BAM for LoFreq variant calling via indel-quality
-    scoring and optional alignment-quality recalibration.
+    scoring.
 
     Purpose:
         Implements Step 5.12 of the data flow specification.  LoFreq was designed for
-        Illumina data and does not natively handle ONT-specific error profiles.  Two
-        preprocessing steps bridge this gap:
+        Illumina data and does not natively handle ONT-specific error profiles.  This
+        preprocessing step adds indel quality tags required for indel calling:
 
-        1. `lofreq indelqual --dindel`
-           Calibrates per-read indel quality scores using the DINDEL algorithm.
-           Without this step, homopolymer errors in ONT reads generate explosive
-           indel false-positives because LoFreq interprets the raw base qualities
-           as reliable indel evidence.
-           Produces BAM tags BI (indel base quality) and BD (deletion base quality)
-           that LoFreq's statistical model uses during variant calling.
+        `lofreq indelqual --dindel`
+        Calibrates per-read indel quality scores using the DINDEL algorithm.
+        Without this step, homopolymer errors in ONT reads generate explosive
+        indel false-positives because LoFreq interprets the raw base qualities
+        as reliable indel evidence.  It produces BAM tags BI (indel base quality)
+        and BD (deletion base quality) that LoFreq's statistical model uses during
+        variant calling.
 
-        2. `lofreq alnqual -b`
-           Recalibrates per-base alignment qualities by considering the local
-           alignment context.  This dampens systematic ONT error sites (e.g.
-           positions adjacent to homopolymers that generate correlated base errors
-           at a fixed frequency).
-           This step is optional in the sense that if it fails (non-zero exit),
-           the pipeline falls back to the indelqual-only BAM.  In practice alnqual
-           rarely fails when --eqx and --MD were used during mapping (D3).
-
-    Fallback rationale:
-        `lofreq alnqual` can fail on malformed CIGAR strings or unsupported MD
-        tags.  Since MINIMAP2_ROUND2 uses `--MD --eqx`, this should not occur in
-        normal operation.  However, the fallback (cp indelqual.bam → alnqual.bam)
-        ensures the pipeline continues gracefully rather than losing the entire
-        sample.  A WARNING is emitted to stderr so the operator is alerted.
+    Alignment-quality note:
+        The previous pipeline ran `lofreq alnqual -b` after indelqual.  On Docker
+        Desktop for Apple Silicon this amd64 LoFreq command was repeatedly killed
+        under emulation, so the integration has been removed.  The caller consumes
+        the indelqual BAM directly.
 
     Prerequisites for LoFreq preprocessing to work (all guaranteed upstream):
         - BAM is sorted and indexed.
@@ -47,7 +37,7 @@
 
     Outputs:
         bam         — [meta, "*_preprocessed.bam", "*_preprocessed.bam.bai"]
-                      The alnqual (or fallback indelqual) BAM, ready for lofreq call.
+                      The indelqual BAM, ready for lofreq call.
         versions    — versions.yml
 
     Container: quay.io/biocontainers/lofreq:2.1.5--py310h4966b78_15
@@ -83,7 +73,7 @@ process LOFREQ_PREPROCESS {
     #
     # lofreq indelqual --dindel adds per-read BI (indel base quality)
     # and BD (deletion base quality) tags.  Without these tags,
-    # lofreq call-parallel will refuse to run with --call-indels.
+    # lofreq call will refuse to run with --call-indels.
     #
     # Prerequisite: BAM must have been sorted, indexed, and mapped with
     # -Y --MD --eqx (guaranteed by MINIMAP2_ROUND2).
@@ -99,32 +89,10 @@ process LOFREQ_PREPROCESS {
     samtools index ${meta.id}_${meta.genotype}_iq.bam
 
     # ----------------------------------------------------------------
-    # Step 2: Alignment quality recalibration.
-    #
-    # lofreq alnqual -b recalibrates per-base alignment qualities using
-    # the alignment context, dampening systematic ONT error sites.
-    # The -b flag writes BAM output (stdout) rather than SAM.
-    #
-    # Fallback: if alnqual exits non-zero (can happen with unusual CIGAR
-    # strings), copy the indelqual BAM unchanged and log a warning.
-    # The downstream LoFreq call will still benefit from indelqual.
-    # ----------------------------------------------------------------
-    lofreq alnqual -b \\
-        ${meta.id}_${meta.genotype}_iq.bam \\
-        ${ref_fasta} \\
-        > ${meta.id}_${meta.genotype}_iq.alnq.bam \\
-    || {
-        echo "WARNING: lofreq alnqual failed for ${meta.id}:${meta.genotype}; using indelqual-only BAM for downstream calling." >&2
-        cp ${meta.id}_${meta.genotype}_iq.bam ${meta.id}_${meta.genotype}_iq.alnq.bam
-    }
-
-    samtools index ${meta.id}_${meta.genotype}_iq.alnq.bam
-
-    # ----------------------------------------------------------------
     # Rename to the canonical output name consumed downstream.
     # ----------------------------------------------------------------
-    mv ${meta.id}_${meta.genotype}_iq.alnq.bam     ${meta.id}_${meta.genotype}_preprocessed.bam
-    mv ${meta.id}_${meta.genotype}_iq.alnq.bam.bai ${meta.id}_${meta.genotype}_preprocessed.bam.bai
+    mv ${meta.id}_${meta.genotype}_iq.bam     ${meta.id}_${meta.genotype}_preprocessed.bam
+    mv ${meta.id}_${meta.genotype}_iq.bam.bai ${meta.id}_${meta.genotype}_preprocessed.bam.bai
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

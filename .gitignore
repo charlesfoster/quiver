@@ -19,6 +19,9 @@ work/
 *.mmi
 *.fai
 
+# Sandbox for manual exploration
+sandbox/
+
 # Log files
 *.log
 pixi.toml

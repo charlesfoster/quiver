@@ -51,11 +51,20 @@ process BUILD_ROUND2_CONSENSUS {
           path("${meta.id}_${meta.genotype}_round2_consensus_simple.fasta"),
           path("${meta.id}_${meta.genotype}_round2_consensus_iupac.fasta"),
           emit: consensus
+    tuple val(meta),
+          path("${meta.id}_${meta.genotype}_round2_consensus_with_gt.vcf.gz"),
+          path("${meta.id}_${meta.genotype}_round2_consensus_with_gt.vcf.gz.tbi"),
+          path("${meta.id}_${meta.genotype}_round2_consensus_simple.vcf.gz"),
+          path("${meta.id}_${meta.genotype}_round2_consensus_simple.vcf.gz.tbi"),
+          path("${meta.id}_${meta.genotype}_round2_consensus_iupac.vcf.gz"),
+          path("${meta.id}_${meta.genotype}_round2_consensus_iupac.vcf.gz.tbi"),
+          emit: vcfs
     path "versions.yml", emit: versions
 
     script:
-    def simple_name = "${meta.id}_${meta.genotype}_round2_consensus_simple"
-    def iupac_name  = "${meta.id}_${meta.genotype}_round2_consensus_iupac"
+    def simple_name  = "${meta.id}_${meta.genotype}_round2_consensus_simple"
+    def iupac_name   = "${meta.id}_${meta.genotype}_round2_consensus_iupac"
+    def with_gt_name = "${meta.id}_${meta.genotype}_round2_consensus_with_gt"
     """
     # ------------------------------------------------------------------
     # Step 1: Add FORMAT/GT column to LoFreq VCF.
@@ -80,16 +89,16 @@ process BUILD_ROUND2_CONSENSUS {
         }
         NF == 8 { print \$0 "\\tGT\\t1/1"; next }
         { print }
-    ' | bgzip -c > with_gt.vcf.gz
-    tabix -p vcf with_gt.vcf.gz
+    ' | bgzip -c > ${with_gt_name}.vcf.gz
+    tabix -p vcf ${with_gt_name}.vcf.gz
 
     # ------------------------------------------------------------------
     # Step 2: Simple consensus VCF — retain only majority-allele sites
     # (AF >= 0.5).  All retained records have GT=1/1; bcftools consensus
     # applies them as ALT alleles, producing a pure majority consensus.
     # ------------------------------------------------------------------
-    bcftools view -i 'INFO/AF>=0.5' with_gt.vcf.gz -Oz -o simple.vcf.gz
-    tabix -p vcf simple.vcf.gz
+    bcftools view -i 'INFO/AF>=0.5' ${with_gt_name}.vcf.gz -Oz -o ${simple_name}.vcf.gz
+    tabix -p vcf ${simple_name}.vcf.gz
 
     # ------------------------------------------------------------------
     # Step 3: IUPAC consensus VCF — demote minority-frequency sites
@@ -98,10 +107,10 @@ process BUILD_ROUND2_CONSENSUS {
     # Sites with AF >= 0.5 retain GT=1/1 and are applied as ALT.
     # ------------------------------------------------------------------
     bcftools +setGT \\
-        -Oz -o iupac.vcf.gz \\
-        with_gt.vcf.gz \\
+        -Oz -o ${iupac_name}.vcf.gz \\
+        ${with_gt_name}.vcf.gz \\
         -- -t q -i 'INFO/AF<0.5' -n 'c:0/1'
-    tabix -p vcf iupac.vcf.gz
+    tabix -p vcf ${iupac_name}.vcf.gz
 
     # ------------------------------------------------------------------
     # Step 4a: Build simple majority-allele consensus.
@@ -110,7 +119,7 @@ process BUILD_ROUND2_CONSENSUS {
         -f ${ref_fasta} \\
         -m ${mask_bed} \\
         -o simple_raw.fasta \\
-        simple.vcf.gz
+        ${simple_name}.vcf.gz
 
     awk 'NR==1{print ">${simple_name}"; next} 1' simple_raw.fasta > ${simple_name}.fasta
 
@@ -123,7 +132,7 @@ process BUILD_ROUND2_CONSENSUS {
         -f ${ref_fasta} \\
         -m ${mask_bed} \\
         -o iupac_raw.fasta \\
-        iupac.vcf.gz
+        ${iupac_name}.vcf.gz
 
     awk 'NR==1{print ">${iupac_name}"; next} 1' iupac_raw.fasta > ${iupac_name}.fasta
 
@@ -134,11 +143,15 @@ process BUILD_ROUND2_CONSENSUS {
     """
 
     stub:
-    def simple_name_s = "${meta.id}_${meta.genotype}_round2_consensus_simple"
-    def iupac_name_s  = "${meta.id}_${meta.genotype}_round2_consensus_iupac"
+    def simple_name_s  = "${meta.id}_${meta.genotype}_round2_consensus_simple"
+    def iupac_name_s   = "${meta.id}_${meta.genotype}_round2_consensus_iupac"
+    def with_gt_name_s = "${meta.id}_${meta.genotype}_round2_consensus_with_gt"
     """
     printf '>${simple_name_s}\\nACGTACGT\\n' > ${simple_name_s}.fasta
-    printf '>${iupac_name_s}\\nACGYMRWS\\n' > ${iupac_name_s}.fasta
+    printf '>${iupac_name_s}\\nACGYMRWS\\n'  > ${iupac_name_s}.fasta
+    touch ${with_gt_name_s}.vcf.gz ${with_gt_name_s}.vcf.gz.tbi
+    touch ${simple_name_s}.vcf.gz  ${simple_name_s}.vcf.gz.tbi
+    touch ${iupac_name_s}.vcf.gz   ${iupac_name_s}.vcf.gz.tbi
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
         bcftools: "1.21"

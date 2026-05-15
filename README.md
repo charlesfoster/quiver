@@ -60,6 +60,7 @@ Container engine and executor are separate concerns — combine them as needed:
 | Profile | Role | Typical use |
 |---|---|---|
 | `docker` | Docker engine, local executor | Mac development (resource caps for M-series) |
+| `docker_mac` | Docker engine, local executor | Apple Silicon Docker with serial LoFreq calling |
 | `conda` | conda/mamba, local executor | Any platform without Docker/Singularity |
 | `singularity` | Singularity engine only | Combine with an HPC profile (see below) |
 | `katana` | SLURM executor, Katana resources | UNSW Katana HPC |
@@ -69,6 +70,9 @@ Container engine and executor are separate concerns — combine them as needed:
 ```bash
 # Mac with Docker
 nextflow run main.nf -profile docker --input samplesheet.csv --outdir results
+
+# Apple Silicon Docker, with serial LoFreq calling
+nextflow run main.nf -profile docker_mac --input samplesheet.csv --outdir results
 
 # Mac or Linux with conda
 nextflow run main.nf -profile conda --input samplesheet.csv --outdir results
@@ -114,6 +118,7 @@ Invocation examples and per-profile notes: [docs/usage.md](docs/usage.md).
 | `--outdir` | `results` | Output directory |
 | `--min_secondary_fraction` | `0.05` | Read fraction threshold for mixed-infection detection |
 | `--lofreq_max_depth` | `5000` | rasusa depth cap for LoFreq |
+| `--lofreq_pp_threads` | `8` | LoFreq parallel workers; `1` uses serial `lofreq call` |
 | `--devider_max_depth` | `1000` | rasusa depth cap for DEVIDER |
 | `--run_clair3` | `false` | Enable optional Clair3 corroboration |
 

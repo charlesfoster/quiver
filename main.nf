@@ -25,7 +25,7 @@ def helpMessage() {
 
     Usage:
         nextflow run main.nf --input samplesheet.csv [options]
-        nextflow run main.nf --input samplesheet.csv -profile local [options]
+        nextflow run main.nf --input samplesheet.csv -profile docker [options]
 
     Required:
         --input FILE                 Samplesheet CSV with columns: sample_id,fastq,metadata_json
@@ -56,6 +56,7 @@ def helpMessage() {
         --min_mq INT                 Minimum mapping quality [default: 20]
         --min_bq INT                 Minimum base quality [default: 7]
         --lofreq_sig FLOAT           LoFreq significance threshold [default: 0.01]
+        --lofreq_pp_threads INT      LoFreq parallel workers; 1 uses serial call [default: 8]
 
     Depth normalisation:
         --lofreq_max_depth INT       rasusa depth cap for LoFreq [default: 5000]
@@ -78,8 +79,9 @@ def helpMessage() {
         --max_time STR               Maximum wall time per process [default: 24.h]
 
     Profiles:
-        -profile local               Mac M5 Max, Docker (Rosetta fallback for x86 images)
-        -profile conda_local         Mac M5 Max, conda/micromamba (native ARM64)
+        -profile docker              Local Docker
+        -profile docker_mac          Apple Silicon Docker; serial LoFreq for stability
+        -profile conda               Local conda/micromamba
         -profile katana              UNSW Katana HPC, SLURM + Singularity
         -profile gadi                NCI Gadi HPC, SLURM + Singularity (requires --gadi_project)
         -profile test                Synthetic minimal test dataset
@@ -107,7 +109,7 @@ workflow {
         =========================================
         Please provide a samplesheet CSV via --input.
         Example:
-            nextflow run main.nf --input samplesheet.csv -profile local
+            nextflow run main.nf --input samplesheet.csv -profile docker
 
         Run with --help for full parameter documentation.
         """.stripIndent()

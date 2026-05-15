@@ -132,8 +132,6 @@
   ```
   lofreq indelqual --dindel -f ${consensus} -o round2.iq.bam round2.bam
   samtools index round2.iq.bam
-  lofreq alnqual -b round2.iq.bam ${consensus} > round2.iq.alnq.bam || cp round2.iq.bam round2.iq.alnq.bam
-  samtools index round2.iq.alnq.bam
   ```
 - **Resources:** 4 CPU, 8 GB, 30 min.
 
@@ -159,9 +157,11 @@
 - **Output:** `variants/${GT}/lofreq.vcf.gz`, `.tbi`
 - **Command:**
   ```
+  # When params.lofreq_pp_threads > 1:
   lofreq call-parallel --pp-threads ${task.cpus} \
     --call-indels --min-mq 20 --min-bq 7 --min-cov 20 --sig 0.01 \
     -f ${consensus} -o lofreq.vcf lofreq.iq.bam
+  # When params.lofreq_pp_threads == 1, the module runs serial lofreq call.
   bgzip lofreq.vcf && tabix -p vcf lofreq.vcf.gz
   ```
 - **Resources:** 16 CPU, 16 GB, 90 min.

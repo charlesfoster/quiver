@@ -266,6 +266,9 @@ workflow HCV_QUASI {
     if (params.lofreq_sig <= 0 || params.lofreq_sig > 1) {
         error "Parameter error: --lofreq_sig (${params.lofreq_sig}) must be in the range (0, 1]."
     }
+    if ((params.lofreq_pp_threads as int) < 1) {
+        error "Parameter error: --lofreq_pp_threads (${params.lofreq_pp_threads}) must be >= 1."
+    }
     if (params.devider_min_abund <= 0 || params.devider_min_abund >= 1) {
         error "Parameter error: --devider_min_abund (${params.devider_min_abund}) must be in the range (0, 1)."
     }

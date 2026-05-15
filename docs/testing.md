@@ -36,7 +36,7 @@ python tests/check_outputs.py test_out test_data/expected_outputs
 
 For each compute profile, the smoke test command (documented in `docs/usage.md`):
 ```
-nextflow run main.nf -profile local --input samplesheet.csv \
+nextflow run main.nf -profile docker --input samplesheet.csv \
     --reference_panel assets/hcv_references.fasta \
     --host_reference /path/to/GRCh38.fa.gz \
     --outdir results/smoke -resume

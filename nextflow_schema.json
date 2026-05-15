@@ -161,6 +161,12 @@
           "default": 0.01,
           "exclusiveMinimum": 0,
           "maximum": 1
+        },
+        "lofreq_pp_threads": {
+          "type": "integer",
+          "description": "Number of LoFreq call-parallel workers. Values <= 1 use serial lofreq call instead of call-parallel.",
+          "default": 8,
+          "minimum": 1
         }
       }
     },

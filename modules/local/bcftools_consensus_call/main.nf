@@ -87,13 +87,17 @@ process BCFTOOLS_CONSENSUS_CALL {
 
     output:
     tuple val(meta),
-          path("consensus_variants.vcf.gz"),
-          path("consensus_variants.vcf.gz.csi"),
+          path("${meta.id}_${meta.genotype}_sample_consensus_variants.vcf.gz"),
+          path("${meta.id}_${meta.genotype}_sample_consensus_variants.vcf.gz.csi"),
           emit: vcf
-    tuple val(meta), path("raw_variants.vcf.gz"), emit: raw_vcf
-    path "versions.yml",                          emit: versions
+    tuple val(meta),
+          path("${meta.id}_${meta.genotype}_sample_consensus_raw.vcf.gz"),
+          emit: raw_vcf
+    path "versions.yml", emit: versions
 
     script:
+    def raw_name      = "${meta.id}_${meta.genotype}_sample_consensus_raw"
+    def filtered_name = "${meta.id}_${meta.genotype}_sample_consensus_variants"
     """
     # ----------------------------------------------------------------
     # Step 1+2: pileup → call (haploid; majority allele only).
@@ -118,12 +122,12 @@ process BCFTOOLS_CONSENSUS_CALL {
         --ploidy 1 \\
         -mv \\
         -Oz \\
-        -o raw_variants.vcf.gz
+        -o ${raw_name}.vcf.gz
 
     # ----------------------------------------------------------------
     # Step 3: index the raw VCF.
     # ----------------------------------------------------------------
-    bcftools index raw_variants.vcf.gz
+    bcftools index ${raw_name}.vcf.gz
 
     # ----------------------------------------------------------------
     # Step 4: filter on minimum depth.
@@ -136,13 +140,13 @@ process BCFTOOLS_CONSENSUS_CALL {
     bcftools view \\
         -i "INFO/DP>=${params.min_consensus_cov}" \\
         -Oz \\
-        -o consensus_variants.vcf.gz \\
-        raw_variants.vcf.gz
+        -o ${filtered_name}.vcf.gz \\
+        ${raw_name}.vcf.gz
 
     # ----------------------------------------------------------------
     # Step 5: index the filtered VCF.
     # ----------------------------------------------------------------
-    bcftools index consensus_variants.vcf.gz
+    bcftools index ${filtered_name}.vcf.gz
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -151,10 +155,12 @@ process BCFTOOLS_CONSENSUS_CALL {
     """
 
     stub:
+    def raw_name_s      = "${meta.id}_${meta.genotype}_sample_consensus_raw"
+    def filtered_name_s = "${meta.id}_${meta.genotype}_sample_consensus_variants"
     """
-    touch raw_variants.vcf.gz
-    touch consensus_variants.vcf.gz
-    touch consensus_variants.vcf.gz.csi
+    touch ${raw_name_s}.vcf.gz
+    touch ${filtered_name_s}.vcf.gz
+    touch ${filtered_name_s}.vcf.gz.csi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

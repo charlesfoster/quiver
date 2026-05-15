@@ -9,7 +9,7 @@ params {
     // --- Inputs ---
     input               = null   // samplesheet CSV (required)
     reference_panel     = "${projectDir}/assets/hcv_references.fasta"
-    host_reference      = null   // path to GRCh38 fasta or .mmi
+    host_reference      = null   // local path to GRCh38 fasta or .mmi
     outdir              = "results"
 
     // --- Read filtering ---
@@ -32,7 +32,9 @@ params {
     min_report_af           = 0.01   // Reporting threshold (1%)
     min_mq                  = 20
     min_bq                  = 7
+    min_alt_bq              = 7
     lofreq_sig              = 0.01
+    lofreq_pp_threads       = 8
 
     // --- Depth normalisation ---
     lofreq_max_depth        = 5000
@@ -92,7 +94,7 @@ Constraints: `sample_id` must match `^[A-Za-z0-9._-]+$`; must be unique; FASTQ m
 
 Select via `-profile <name>`. Profiles defined in `conf/`.
 
-### `local` — Mac M5 Max
+### `docker` — Local Docker
 
 ```groovy
 process {
@@ -108,14 +110,17 @@ params.max_cpus   = 12
 params.max_memory = '56.GB'
 ```
 
-> Leave 8 GB headroom for macOS. Biocontainers are increasingly multi-arch; if a tool is x86-only, Docker uses Rosetta 2 (~30–50% slower). For production-scale local runs prefer the `conda_local` profile.
+> Leave 8 GB headroom for macOS. Biocontainers are increasingly multi-arch; if a tool is x86-only, Docker uses Rosetta 2 (~30–50% slower). For Apple Silicon Docker runs prefer the `docker_mac` profile.
 
-### `conda_local` — Mac M5 Max fallback (no Docker)
+### `docker_mac` — Apple Silicon Docker
+
+The `docker_mac` profile inherits `docker`, sets `params.lofreq_pp_threads = 1`, and constrains `LOFREQ_CALL` to one CPU and one fork. This keeps LoFreq serial under Docker Desktop/Rosetta to avoid `call-parallel` OOM/SIGKILL failures.
+
+### `conda` — Local conda fallback
 
 ```groovy
 process {
     executor = 'local'
-    conda    = "${projectDir}/env/hcv-quasi.yml"
 }
 conda {
     enabled       = true
