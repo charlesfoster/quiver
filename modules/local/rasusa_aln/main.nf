@@ -26,7 +26,8 @@
         bam       — [meta, "*_subsampled.bam", "*_subsampled.bam.bai"]
         versions  — versions.yml
 
-    Container: quay.io/biocontainers/rasusa:2.1.0--hc1c3326_1
+    Container: quay.io/biocontainers/mulled-v2-63db865de20231a1a8041a0097020a7aa4d6fd4f:4a932b9520024c9c05a25b151a91e45fef6e5013-0
+               (rasusa 4.1.0 + samtools 1.23.1)
     Label: process_medium
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -38,8 +39,8 @@ process RASUSA_ALN {
     tag "${meta.id}:${meta.genotype}"
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/rasusa:2.1.0--hc1c3326_1' :
-        'quay.io/biocontainers/rasusa:2.1.0--hc1c3326_1' }"
+        'https://depot.galaxyproject.org/singularity/mulled-v2-63db865de20231a1a8041a0097020a7aa4d6fd4f:4a932b9520024c9c05a25b151a91e45fef6e5013-0' :
+        'quay.io/biocontainers/mulled-v2-63db865de20231a1a8041a0097020a7aa4d6fd4f:4a932b9520024c9c05a25b151a91e45fef6e5013-0' }"
     conda "${moduleDir}/environment.yml"
 
     input:
@@ -76,8 +77,8 @@ process RASUSA_ALN {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        rasusa: "2.1.0"
-        samtools: "1.21"
+        rasusa: "4.1.0"
+        samtools: "1.23.1"
     END_VERSIONS
     """
 }
