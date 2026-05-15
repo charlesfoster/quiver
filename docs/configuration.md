@@ -38,7 +38,7 @@ params {
 
     // --- Depth normalisation ---
     lofreq_max_depth        = 5000
-    devider_max_depth       = 1000
+    devider_max_depth       = 5000
     rasusa_seed_lofreq      = 42
     rasusa_seed_devider     = 43
 

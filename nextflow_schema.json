@@ -185,7 +185,7 @@
         "devider_max_depth": {
           "type": "integer",
           "description": "Maximum depth for rasusa subsampling prior to DEVIDER haplotype reconstruction (memory limit).",
-          "default": 1000,
+          "default": 5000,
           "minimum": 0
         },
         "rasusa_seed_lofreq": {
