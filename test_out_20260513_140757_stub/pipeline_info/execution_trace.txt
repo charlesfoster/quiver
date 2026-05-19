@@ -1,5 +1,0 @@
-task_id	hash	native_id	name	status	exit	submit	duration	realtime	%cpu	peak_rss	peak_vmem	rchar	wchar
-3	75/8c6b16	96689	HCV_QUASI:INPUT_CHECK (1)	COMPLETED	0	2026-05-13 14:08:00.546	58ms	9ms	-	-	-	-	-
-2	98/640496	96688	HCV_QUASI:INDEX_PANEL (panel_index)	COMPLETED	0	2026-05-13 14:08:00.542	79ms	27ms	-	-	-	-	-
-1	b7/361a20	96730	HCV_QUASI:INDEX_HOST (host_index)	COMPLETED	0	2026-05-13 14:08:00.624	64ms	19ms	-	-	-	-	-
-4	d4/b4c205	96769	HCV_QUASI:DUMP_SOFTWARE_VERSIONS (software_versions)	COMPLETED	0	2026-05-13 14:08:00.703	72ms	9ms	-	-	-	-	-

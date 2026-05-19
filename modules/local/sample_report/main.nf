@@ -43,7 +43,7 @@
         mosdepth_files  — list of *.mosdepth.summary.txt from all branches (optional)
         variant_tsvs    — list of *_variants.tsv from all branches (optional)
         flagstat_files  — list of *_round2.flagstat from all branches (optional)
-        stitch_reports  — list of *_stitch_report.json from all branches (optional)
+        haplotype_reports — list of *_haplotype_report.json from all branches (optional)
         nanoplot_dirs   — list of NanoPlot output directories (optional)
         flag_files      — list of sentinel flag files (optional)
 
@@ -90,7 +90,7 @@ process SAMPLE_REPORT {
           path(mosdepth_beds),      // optional: list of *.regions.bed.gz (per-window coverage)
           path(variant_tsvs),       // optional: list of *_variants.tsv
           path(flagstat_files),     // optional: list of *_round2.flagstat
-          path(stitch_reports),     // optional: list of *_stitch_report.json
+          path(haplotype_reports),   // optional: list of *_haplotype_report.json
           path(nanoplot_dirs),      // optional: list of NanoPlot directories
           path(flag_files)          // optional: list of *.FLAGNAME sentinel files
 
@@ -116,14 +116,22 @@ process SAMPLE_REPORT {
     def nanoq_filt_arg     = nanoq_filtered ? "--nanoq-filtered ${nanoq_filtered}"  : ""
     def host_stats_arg     = host_stats     ? "--host-stats ${host_stats}"          : ""
 
+    def _ri_b64 = groovy.json.JsonOutput.toJson([
+        pipeline_version: (workflow.manifest.version ?: 'QuIVER'),
+        nextflow_version: workflow.nextflow.version.toString(),
+        params          : params.findAll { true },
+    ]).bytes.encodeBase64().toString()
+
     // For list inputs (mosdepth_files, etc.) Nextflow stages them as space-separated
     // filenames in the work directory.  We pass them as-is; the Python script
     // iterates them with nargs="*".
     """
     # ----------------------------------------------------------------
-    # Install Jinja2 (fast — ~5 s; cached after first Docker layer pull).
+    # Install Jinja2 and write run_info.json for reproducibility section.
     # ----------------------------------------------------------------
-    pip install --quiet jinja2 2>&1 | grep -v "^Requirement already"
+    pip install --quiet jinja2 2>/dev/null
+
+    python3 -c "import base64,json; open('run_info.json','w').write(json.dumps(json.loads(base64.b64decode('${_ri_b64}')),indent=2))"
 
     # ----------------------------------------------------------------
     # Build the optional argument lists.
@@ -155,9 +163,9 @@ process SAMPLE_REPORT {
         flagstat_args="--flagstats \$(ls *.flagstat | tr '\\n' ' ')"
     fi
 
-    stitch_args=""
-    if compgen -G "*_stitch_report.json" > /dev/null 2>&1; then
-        stitch_args="--stitch-reports \$(ls *_stitch_report.json | tr '\\n' ' ')"
+    haplotype_args=""
+    if compgen -G "*_haplotype_report.json" > /dev/null 2>&1; then
+        haplotype_args="--haplotype-reports \$(ls *_haplotype_report.json | tr '\\n' ' ')"
     fi
 
     nanoplot_args=""
@@ -189,15 +197,16 @@ process SAMPLE_REPORT {
         ${nanoq_raw_arg} \\
         ${nanoq_filt_arg} \\
         ${host_stats_arg} \\
+        --run-info run_info.json \\
         --template ${projectDir}/assets/templates/sample_report.html.j2 \\
-        --pipeline-version "${workflow.manifest.version ?: 'hcv-quasi'}" \\
+        --pipeline-version "${workflow.manifest.version ?: 'QuIVER'}" \\
         --output-html ${meta.id}_summary.html \\
         --output-json ${meta.id}_summary.json \\
         \${mosdepth_args} \\
         \${mosdepth_bed_args} \\
         \${variant_args} \\
         \${flagstat_args} \\
-        \${stitch_args} \\
+        \${haplotype_args} \\
         \${nanoplot_args} \\
         \${flag_args}
 

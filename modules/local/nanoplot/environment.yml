@@ -3,4 +3,7 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - bioconda::nanoplot=1.43.0
+  - bioconda::nanoplot=1.46.2
+  - conda-forge::plotly<6
+  - conda-forge::python-kaleido=0.2.1
+  - conda-forge::python>=3.9,<3.13

@@ -1,13 +1,13 @@
-# MultiQC configuration for hcv-quasi pipeline
+# MultiQC configuration for QuIVER pipeline
 # Used by the MULTIQC Nextflow module (modules/local/multiqc.nf).
 #
 # MultiQC version: 1.25.1 (quay.io/biocontainers/multiqc:1.25.1--pyhdfd78af_0)
 # See CLAUDE.md Section 4 for pinned versions.
 
-title: "hcv-quasi pipeline QC report"
+title: "QuIVER pipeline QC report"
 subtitle: "HCV quasispecies pipeline — per-run aggregate quality control"
 intro_text: >
-    This report was generated automatically by the hcv-quasi pipeline.
+    This report was generated automatically by the QuIVER pipeline.
     It aggregates QC metrics from NanoPlot (raw read quality), mosdepth
     (coverage), samtools flagstat (mapping rates), and bcftools stats
     (variant call quality) across all samples in this run.
@@ -25,7 +25,7 @@ force: true
 log_filesize_limit: 500000000  # 500 MB — large HCV runs may have big logs
 
 # ── Module selection ─────────────────────────────────────────────────────────
-# Only run parsers relevant to hcv-quasi outputs.  This keeps the report
+# Only run parsers relevant to QuIVER outputs.  This keeps the report
 # focused and avoids false-positive parsing of unrelated files in the work dir.
 run_modules:
     - nanoplot

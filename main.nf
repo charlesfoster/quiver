@@ -2,14 +2,13 @@
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    hcv-quasi
-    HCV quasispecies pipeline: low-frequency variant calling and haplotype
-    reconstruction from ONT PromethION reads.
+    QuIVER: Quasispecies Inference Via Ensemble Reconstruction
+    Low-frequency variant calling and haplotype reconstruction from ONT PromethION reads.
     Documentation: CLAUDE.md and docs/
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-include { HCV_QUASI } from './workflows/hcv_quasi'
+include { QUIVER } from './workflows/quiver'
 
 // -----------------------------------------------------------------------
 // Help text
@@ -17,7 +16,7 @@ include { HCV_QUASI } from './workflows/hcv_quasi'
 def helpMessage() {
     log.info """
     =========================================
-    hcv-quasi  v${workflow.manifest.version}
+    QuIVER  v${workflow.manifest.version}
     =========================================
     HCV quasispecies pipeline: low-frequency variant calling and haplotype
     reconstruction from ONT PromethION reads. Handles mixed-genotype infections
@@ -117,7 +116,7 @@ workflow {
     }
 
     // Launch main pipeline workflow
-    HCV_QUASI()
+    QUIVER()
 }
 
 // -----------------------------------------------------------------------
@@ -133,7 +132,7 @@ workflow.onComplete {
     if (workflow.success) {
         log.info """
         =========================================
-        hcv-quasi  v${workflow.manifest.version}
+        QuIVER  v${workflow.manifest.version}
         =========================================
         Analysis successfully completed in ${elapsed}.
         Results located in: ${params.outdir}
@@ -142,11 +141,34 @@ workflow.onComplete {
     } else {
         log.error """
         =========================================
-        hcv-quasi  v${workflow.manifest.version}
+        QuIVER  v${workflow.manifest.version}
         =========================================
         Pipeline completed with errors after ${elapsed}.
         Check the Nextflow log and work/ directory for details.
         =========================================
         """.stripIndent()
+    }
+
+    // Write reproducibility dump — captured on every run including failures.
+    try {
+        def ts = workflow.start.format('yyyy-MM-dd_HH-mm-ss')
+        def info = [
+            command_line    : workflow.commandLine,
+            run_name        : workflow.runName,
+            pipeline_version: workflow.manifest.version ?: "QuIVER (dev)",
+            nextflow_version: workflow.nextflow.version.toString(),
+            started         : workflow.start.toString(),
+            completed       : workflow.complete.toString(),
+            duration        : workflow.duration.toString(),
+            success         : workflow.success,
+            exit_status     : workflow.exitStatus,
+            params          : params.findAll { true },
+        ]
+        def out_dir = file("${params.outdir}/pipeline_info/")
+        out_dir.mkdirs()
+        file("${params.outdir}/pipeline_info/params_used_${ts}.json").text =
+            groovy.json.JsonOutput.prettyPrint(groovy.json.JsonOutput.toJson(info))
+    } catch (Exception e) {
+        log.warn "Could not write params_used JSON: ${e.message}"
     }
 }

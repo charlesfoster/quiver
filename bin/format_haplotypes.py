@@ -1,117 +1,54 @@
 #!/usr/bin/env python3
 """
-stitch_haplotypes.py — Post-hoc stitching of DEVIDER per-window haplotypes.
+format_haplotypes.py — Format and annotate DEVIDER haplotype output.
 
-Why window-stitching is needed
-------------------------------
-DEVIDER v0.0.1 (the only tagged release) reconstructs haplotypes inside
-overlapping genomic windows.  Each window emits its own set of candidate
-haplotype sequences with locally consistent SNV calls.  v0.0.1 has **no
-``--merge-windows`` flag**: it does not perform cross-window stitching.  For a
-9.6 kb HCV genome that is window-wise reconstructed in chunks of (typically)
-~2-3 kb, this means the user is left with a collection of per-window haplotypes
-that need to be joined into longer-range haplotypes before downstream analysis
-(phylogenetics, drug-resistance prediction, etc.).
+Purpose
+-------
+DEVIDER v0.0.1 reconstructs haplotypes and emits ``majority_vote_haplotypes.fasta``
+with verbose internal headers, e.g.::
 
-This script implements that stitching as a post-hoc step on top of DEVIDER's
-own outputs.  See ``docs/data_flow.md`` Step 5.20 and ``CLAUDE.md`` decision
-D11 for the rationale; see ``docs/architecture_reasoning.md`` §9 for why we do
-not try to force DEVIDER into one giant window.
+    >Contig:S01_1_consensus,Range:ALL-ALL,Haplotype:6,Abundance:31.98,Depth:1392.79 SimpleConsensus
 
-What "spanning read" means here
--------------------------------
-A spanning read is a single long ONT read whose primary alignment touches
-**both** of two adjacent DEVIDER windows.  DEVIDER's ``--output-reads`` flag
-emits a haplotype-tagged BAM in which each read carries the haplotype ID it
-was assigned **within each window it spans**.  We look up that tag for both
-windows of every adjacent pair and tally the ``(hap_in_W_i, hap_in_W_{i+1})``
-pairings.  When ``count >= --min-reads`` we declare that ``hap_X → hap_Y`` is
-a supported link between the two windows.
+This script re-sorts haplotypes by abundance (highest first), assigns clean
+sequential IDs, and writes enriched headers in a standard format::
 
-Greedy assembly + limitations
------------------------------
-We build merged haplotypes by greedily extending chains left-to-right through
-the windows.  At each junction we follow the strongest supported link.  When
-multiple links from the same upstream haplotype meet the threshold (e.g.
-``hap A → hap X`` with 28 reads AND ``hap A → hap Y`` with 14 reads, both
-above ``--min-reads``), we enumerate **all** of them as separate chains
-rather than picking one arbitrarily.  This is conservative: it can over-emit
-where the true biology has branching haplotype evolution, but it avoids
-silently dropping minority-supported paths that may correspond to real
-low-frequency variants.
+    >S01_1_haplotype_0 abund:31.98 depth:1392.79 length:9286
 
-The algorithm is NOT optimal — for true branching evolution with shared
-upstream segments, downstream phylogenetic analysis is the right tool to
-collapse near-identical merged haplotypes.  The abundance reported per
-chain is a **lower bound**: it is the minimum of the per-junction support
-fractions (``link_reads / total_spanning_reads``) across all junctions in
-the chain.
+It also writes a mapping TSV (``*_haplotype_map.tsv``) and a JSON report so
+downstream tools can cross-reference the new IDs back to DEVIDER's originals.
 
-What ``--min-reads`` controls
------------------------------
-``--min-reads`` (= ``params.stitch_min_reads``, default 5) is the minimum
-number of spanning reads that must support a single ``hap_X → hap_Y`` link
-for it to be accepted.  Tuning:
+Why ALL-ALL is expected
+-----------------------
+In this pipeline, DEVIDER is always given reads ≥ 2,000 bp and a LoFreq-filtered
+VCF with typically ~26 SNPs across 9,286 bp.  With reads that span the full
+genome and a sparse SNP set, DEVIDER reconstructs all haplotypes in a single
+global window (``Range:ALL-ALL``).  Multiple windows would only arise with
+much higher SNP density or reads too short to bridge SNP clusters — neither
+condition holds here.
 
-  * Low coverage / very short reads → lower (e.g. 3): you get more partial
-    chains but at the cost of weakly-supported links that may be artefacts.
-  * Deep coverage / very long reads → higher (e.g. 10-15): you get fewer
-    but more confident chains.
+The code retains its original window-stitching logic as a safe fallback:
+if DEVIDER ever does produce multiple windows (e.g. on an unusual sample), the
+script will stitch them before applying header formatting.  In the normal case
+there is nothing to stitch and it is a no-op.
 
 DEVIDER failure handling
 ------------------------
-If the DEVIDER process emitted ``devider.failed`` (or no haplotype FASTAs
-exist) we emit an empty merged_haplotypes.fasta and a JSON report with
-``fallback_used = true``.  The script always exits 0 in these cases — it is
-not the stitcher's job to fail the sample.
-
-DEVIDER output discovery
-------------------------
-DEVIDER's exact output filenames evolve between releases.  We do NOT
-hard-code names.  Instead we discover the structure by globbing:
-  *.fasta / *.fa under the devider dir → per-window haplotype FASTAs
-  *.bam under the devider dir          → haplotype-tagged BAM
-Window coordinates are parsed defensively from FASTA record headers.
-
-Header parsing
---------------
-We try several known DEVIDER-style header formats:
-  >WINDOW_START-WINDOW_END_HAPLOTYPE_INDEX
-  >region:START-END|hap:N
-  >hap_N_window_START_END
-  >chrom:START-END_hapN
-If a header cannot be parsed we still emit the sequence as a chain-of-one
-(a fallback) and record it in the report under ``unparsed_headers``.
-
-Haplotype-tag parsing
----------------------
-For each alignment in the haplotype-tagged BAM we look (in order of
-preference) at:
-  * ``HP``  standard haplotype tag (integer-valued)
-  * ``YH``  DEVIDER-specific tag (string-valued, ``window:hap`` format)
-  * read-name suffix (``..._hapN`` / ``..._h:N``) — last-resort
-Whichever is present is used; if none match the read is skipped for the
-purposes of building junction evidence (it cannot tell us which haplotype
-it belongs to).
+If ``devider.failed`` is present or no FASTAs are found, the script writes an
+empty FASTA, an empty mapping TSV, and a JSON with ``fallback_used: true``.
+It always exits 0 — the per-sample report handles the missing-haplotype case.
 
 Outputs
 -------
-1. ``merged_haplotypes.fasta``: one record per emitted chain.  Header format
-   ``>{sample_id}_{genotype}_haplotype_{N}`` where ``N`` is the chain index
-   (zero-based).  Chain index 0 is the highest-coverage / longest chain; ties
-   are broken by abundance then by chain length.
-
-2. ``stitch_report.json``: machine-readable record of every window, every
-   junction, every link, and the final emitted chains.  Schema in the
-   ``write_report`` function.
+1. ``*_haplotypes.fasta`` — one record per haplotype, sorted by abundance desc.
+   Header: ``>{sample_id}_{genotype}_haplotype_{N} abund:XX.XX depth:XXXX.XX length:XXXX``
+2. ``*_haplotype_map.tsv`` — mapping of new IDs to original DEVIDER headers.
+3. ``*_haplotype_report.json`` — machine-readable record of windows, chains, report.
 
 Dependencies: ``pysam``, Python standard library only (no NumPy / pandas).
 
 See also
 --------
 * ``docs/data_flow.md``                Steps 5.19, 5.20
-* ``docs/implementation_prompts.md``   Prompt 21
-* ``docs/architecture_reasoning.md``   §9
 * ``CLAUDE.md``                        D11, params.stitch_min_reads
 """
 
@@ -139,7 +76,7 @@ from typing import Any, Optional
 
 def log(msg: str) -> None:
     """Structured log line to stderr (matches the convention used elsewhere)."""
-    print(f"[stitch_haplotypes] {msg}", file=sys.stderr)
+    print(f"[format_haplotypes] {msg}", file=sys.stderr)
 
 
 # --------------------------------------------------------------------------- #
@@ -156,6 +93,7 @@ class WindowHaplotype:
     raw_id: str                 # original FASTA header (without leading '>')
     sequence: str               # nucleotide sequence (uppercase, gap-free)
     reported_abundance: Optional[float] = None  # DEVIDER-reported abundance fraction (0-1)
+    reported_depth: Optional[float] = None      # DEVIDER-reported mean depth at this haplotype
 
     @property
     def key(self) -> str:
@@ -228,8 +166,9 @@ _HEADER_PATTERNS = [
 # Matches DEVIDER 0.0.1 whole-genome (single-window) output:
 #   >Contig:...,Range:ALL-ALL,Haplotype:N,...
 _ALLALL_RE = re.compile(r"Range:ALL-ALL.*?Haplotype:(?P<hap>\d+)", re.IGNORECASE)
-# Abundance field in DEVIDER ALL-ALL headers: Abundance:12.55 (percentage)
+# Abundance and Depth fields in DEVIDER ALL-ALL headers (values are percentages / mean depth)
 _ABUNDANCE_RE = re.compile(r"Abundance:(?P<ab>[\d.]+)", re.IGNORECASE)
+_DEPTH_RE     = re.compile(r"Depth:(?P<dep>[\d.]+)",    re.IGNORECASE)
 
 
 def parse_devider_header(header: str) -> Optional[tuple[int, int, int]]:
@@ -270,6 +209,17 @@ def _parse_devider_abundance(header: str) -> Optional[float]:
     if m:
         try:
             return float(m.group("ab")) / 100.0
+        except ValueError:
+            pass
+    return None
+
+
+def _parse_devider_depth(header: str) -> Optional[float]:
+    """Extract DEVIDER-reported mean depth from header (raw value, not normalised)."""
+    m = _DEPTH_RE.search(header)
+    if m:
+        try:
+            return float(m.group("dep"))
         except ValueError:
             pass
     return None
@@ -352,14 +302,15 @@ def load_haplotypes(fasta_paths: list[Path]) -> tuple[list[WindowHaplotype], lis
                 continue
             start, end, hap = parsed
             abund = _parse_devider_abundance(header)
-            by_window[(start, end)].append((hap, header, sequence, abund))
+            depth = _parse_devider_depth(header)
+            by_window[(start, end)].append((hap, header, sequence, abund, depth))
 
     # Assign deterministic ordinals: sort windows by start position, then end.
     sorted_windows = sorted(by_window.keys(), key=lambda se: (se[0], se[1]))
     haplotypes: list[WindowHaplotype] = []
     for w_idx, (start, end) in enumerate(sorted_windows):
         # Sort haplotypes within the window by their declared hap_index for stability.
-        for hap, header, seq, abund in sorted(by_window[(start, end)], key=lambda x: x[0]):
+        for hap, header, seq, abund, depth in sorted(by_window[(start, end)], key=lambda x: x[0]):
             haplotypes.append(WindowHaplotype(
                 window_index=w_idx,
                 window_start=start,
@@ -368,6 +319,7 @@ def load_haplotypes(fasta_paths: list[Path]) -> tuple[list[WindowHaplotype], lis
                 raw_id=header,
                 sequence=seq,
                 reported_abundance=abund,
+                reported_depth=depth,
             ))
 
     # Append unparsed records as their own pseudo-windows at the end.
@@ -770,21 +722,75 @@ def write_fasta(
     chains: list[Chain],
     sample_id: str,
     genotype: str,
+    hap_by_pos: dict[tuple[int, int], "WindowHaplotype"] | None = None,
 ) -> None:
     """
-    Write one record per chain.
+    Write one record per chain with enriched header.
 
-    Header: ``>{sample_id}_{genotype}_haplotype_{N}`` (N = chain ordinal).
-    The sequence is written in 80-column lines for compatibility with
-    downstream FASTA-consuming tools.
+    Header format:
+        >{sample_id}_{genotype}_haplotype_{N} abund:XX.XX depth:XXXX.XX length:XXXX
+
+    abund  — abundance percentage (2 dp); from DEVIDER's Abundance field for
+             single-window chains, or the junction-support lower-bound for
+             multi-window stitched chains.
+    depth  — mean read depth (2 dp); from DEVIDER's Depth field (single-window
+             only; omitted for multi-window chains where per-window depths are
+             not additive).
+    length — sequence length in bp.
+
+    Chains are ordered by abundance descending (highest first).
     """
     with open(out_path, "w") as fh:
         for n, chain in enumerate(chains):
-            fh.write(f">{sample_id}_{genotype}_haplotype_{n}\n")
+            abund_pct = chain.abundance_lower_bound * 100
+            length    = len(chain.sequence)
+
+            depth_tag = ""
+            if hap_by_pos is not None and len(chain.windows) == 1:
+                wh = hap_by_pos.get((chain.windows[0], chain.hap_indices[0]))
+                if wh is not None and wh.reported_depth is not None:
+                    depth_tag = f" depth:{wh.reported_depth:.2f}"
+
+            fh.write(
+                f">{sample_id}_{genotype}_haplotype_{n}"
+                f" abund:{abund_pct:.2f}{depth_tag} length:{length}\n"
+            )
             seq = chain.sequence
             for i in range(0, len(seq), 80):
                 fh.write(seq[i:i + 80])
                 fh.write("\n")
+
+
+def write_mapping(
+    out_path: Path,
+    chains: list[Chain],
+    sample_id: str,
+    genotype: str,
+    hap_by_pos: dict[tuple[int, int], "WindowHaplotype"] | None = None,
+) -> None:
+    """
+    Write a TSV mapping new haplotype IDs to the original DEVIDER headers.
+
+    Columns: new_id, abundance_pct, depth, length_bp, original_devider_header
+    depth is empty for multi-window chains.
+    """
+    with open(out_path, "w") as fh:
+        fh.write("new_id\tabundance_pct\tdepth\tlength_bp\toriginal_devider_header\n")
+        for n, chain in enumerate(chains):
+            new_id    = f"{sample_id}_{genotype}_haplotype_{n}"
+            abund_pct = f"{chain.abundance_lower_bound * 100:.2f}"
+            length    = len(chain.sequence)
+
+            depth_str = ""
+            orig_header = ""
+            if hap_by_pos is not None and len(chain.windows) == 1:
+                wh = hap_by_pos.get((chain.windows[0], chain.hap_indices[0]))
+                if wh is not None:
+                    if wh.reported_depth is not None:
+                        depth_str = f"{wh.reported_depth:.2f}"
+                    orig_header = wh.raw_id
+
+            fh.write(f"{new_id}\t{abund_pct}\t{depth_str}\t{length}\t{orig_header}\n")
 
 
 def build_report(
@@ -857,31 +863,35 @@ def write_report(out_path: Path, report: dict[str, Any]) -> None:
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=(
-            "Post-hoc stitching of DEVIDER per-window haplotypes using "
-            "read-spanning evidence from a haplotype-tagged BAM."
+            "Format and annotate DEVIDER haplotype output: re-sort by abundance, "
+            "assign clean IDs, enrich FASTA headers, and write a header mapping TSV."
         ),
     )
     p.add_argument("--devider-dir", required=True, type=Path,
-                   help="DEVIDER output directory (will be globbed for FASTAs and BAM).")
+                   help="DEVIDER output directory (globbed for FASTAs and BAM).")
     p.add_argument("--output-fasta", required=True, type=Path,
-                   help="Output FASTA of stitched haplotypes.")
+                   help="Output FASTA of formatted haplotypes.")
     p.add_argument("--output-json", required=True, type=Path,
-                   help="Output JSON stitching report.")
+                   help="Output JSON haplotype report.")
+    p.add_argument("--output-mapping", required=True, type=Path,
+                   help="Output TSV mapping new IDs to original DEVIDER headers.")
     p.add_argument("--sample-id", required=True,
                    help="Sample identifier (used in record headers and report).")
     p.add_argument("--genotype", required=True,
                    help="Genotype label (used in record headers and report).")
     p.add_argument("--min-reads", type=int, default=5,
                    help="Minimum spanning reads to support a window-to-window link "
-                        "(matches params.stitch_min_reads; default 5).")
+                        "(only relevant if DEVIDER produced multiple windows; default 5).")
     return p.parse_args(argv)
 
 
 def _emit_empty(args: argparse.Namespace, reason: str) -> None:
-    """Emit empty FASTA + JSON when DEVIDER produced nothing usable."""
+    """Emit empty FASTA + mapping TSV + JSON when DEVIDER produced nothing usable."""
     log(reason)
-    # Empty FASTA — keep the file present so Nextflow output globs resolve.
     args.output_fasta.write_text("")
+    args.output_mapping.write_text(
+        "new_id\tabundance_pct\tdepth\tlength_bp\toriginal_devider_header\n"
+    )
     report = build_report(
         sample_id=args.sample_id,
         genotype=args.genotype,
@@ -955,7 +965,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     log(f"assembled {len(chains)} chain(s)")
 
     # --- Phase 4: write outputs ------------------------------------------- #
-    write_fasta(args.output_fasta, chains, args.sample_id, args.genotype)
+    hap_by_pos: dict[tuple[int, int], WindowHaplotype] = {
+        (h.window_index, h.hap_index): h for h in haplotypes
+    }
+    write_fasta(args.output_fasta, chains, args.sample_id, args.genotype, hap_by_pos)
+    write_mapping(args.output_mapping, chains, args.sample_id, args.genotype, hap_by_pos)
     report = build_report(
         sample_id=args.sample_id,
         genotype=args.genotype,
@@ -984,6 +998,9 @@ if __name__ == "__main__":
             # Try to write empty outputs if at all possible.
             args = parse_args()
             args.output_fasta.write_text("")
+            args.output_mapping.write_text(
+                "new_id\tabundance_pct\tdepth\tlength_bp\toriginal_devider_header\n"
+            )
             write_report(
                 args.output_json,
                 {

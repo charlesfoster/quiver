@@ -62,7 +62,7 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
-          tags: hcv-quasi/devider:smoke
+          tags: quiver/devider:smoke
           cache-from: type=gha
 
       - name: Smoke test — devider --help exits 0
@@ -70,7 +70,7 @@ jobs:
         # DEVIDER v0.0.1 exits 0 for --help; update this assertion if a newer
         # release changes the exit code.
         run: |
-          docker run --rm --platform linux/amd64 hcv-quasi/devider:smoke --help
+          docker run --rm --platform linux/amd64 quiver/devider:smoke --help
 
   build-align-tools:
     runs-on: ubuntu-latest
@@ -112,11 +112,11 @@ jobs:
           platforms: linux/amd64
           push: false
           load: true
-          tags: hcv-quasi/align-tools:smoke
+          tags: quiver/align-tools:smoke
           cache-from: type=gha
 
       - name: Smoke test — minimap2, samtools, bcftools present
         run: |
-          docker run --rm --platform linux/amd64 hcv-quasi/align-tools:smoke minimap2 --version
-          docker run --rm --platform linux/amd64 hcv-quasi/align-tools:smoke samtools --version
-          docker run --rm --platform linux/amd64 hcv-quasi/align-tools:smoke bcftools --version
+          docker run --rm --platform linux/amd64 quiver/align-tools:smoke minimap2 --version
+          docker run --rm --platform linux/amd64 quiver/align-tools:smoke samtools --version
+          docker run --rm --platform linux/amd64 quiver/align-tools:smoke bcftools --version

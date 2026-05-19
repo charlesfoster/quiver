@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema",
-  "$id": "https://raw.githubusercontent.com/h2seq/hcv-quasi/main/nextflow_schema.json",
-  "title": "hcv-quasi pipeline parameters",
+  "$id": "https://raw.githubusercontent.com/charlesfoster/quiver/main/nextflow_schema.json",
+  "title": "QuIVER pipeline parameters",
   "description": "Nextflow DSL2 pipeline for HCV quasispecies inference from ONT PromethION sequencing. Performs genome-wide low-frequency variant calling and haplotype reconstruction, with automatic mixed-genotype detection and per-genotype branching.",
   "type": "object",
   "definitions": {
@@ -26,7 +26,7 @@
         },
         "host_reference": {
           "type": "string",
-          "description": "Path to human host reference FASTA (GRCh38 no-alt recommended) or minimap2 .mmi index.",
+          "description": "Path to human host reference FASTA (GRCh38 no-alt recommended) or pre-built minimap2 .mmi index. If omitted, GRCh38 no-alt is downloaded automatically and cached in host_genome_cache.",
           "format": "file-path"
         },
         "outdir": {
@@ -167,6 +167,12 @@
           "description": "Number of LoFreq call-parallel workers. Values <= 1 use serial lofreq call instead of call-parallel.",
           "default": 8,
           "minimum": 1
+        },
+        "max_sb": {
+          "type": "integer",
+          "description": "Maximum INFO/SB Phred-scaled strand bias score. LoFreq computes SB from Fisher's exact test on DP4 counts but does not filter on it by default. At high depth (5000x) the test is hypersensitive; SB=200 (p < 10^-20) was chosen empirically to remove multi-allelic clustered artefacts in repetitive regions while retaining depth-inflated but real variants.",
+          "default": 200,
+          "minimum": 0
         }
       }
     },
@@ -211,27 +217,76 @@
         "devider_min_read_length": {
           "type": "integer",
           "description": "Minimum read length (bp) retained for DEVIDER input. Applied before rasusa_aln subsampling so the depth cap is drawn from long reads only. Short reads spanning few SNPs fragment the assembly graph without contributing phasing information.",
-          "default": 2000,
+          "default": 4000,
           "minimum": 0
         },
         "devider_min_cov": {
           "type": "integer",
           "description": "Minimum per-window coverage for DEVIDER to call haplotypes.",
-          "default": 20,
+          "default": 10,
           "minimum": 0
         },
         "devider_min_abund": {
           "type": "number",
-          "description": "Minimum abundance (frequency) of a haplotype variant within a window for DEVIDER to report it.",
+          "description": "Minimum haplotype abundance for DEVIDER to report a haplotype. This is a literal percent value: 0.25 means 0.25% (not 25%). DEVIDER applies this as a joint constraint with devider_min_cov.",
           "default": 0.25,
           "minimum": 0,
           "maximum": 1
         },
-        "stitch_min_reads": {
-          "type": "integer",
-          "description": "Minimum number of reads required to link two adjacent haplotypes in post-hoc stitching.",
-          "default": 5,
-          "minimum": 0
+        "devider_min_af": {
+          "type": "number",
+          "description": "Minimum allele frequency for variants included in the VCF passed to DEVIDER for phasing. A higher threshold than min_report_af (1%) prevents low-AF noise variants from saturating DEVIDER's de Bruijn phasing graph and collapsing haplotype resolution. Must be >= min_report_af.",
+          "default": 0.05,
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "host_depletion": {
+      "title": "Host depletion",
+      "type": "object",
+      "description": "Options for human read depletion. Specify at most one method; nohuman is the default when none is specified.",
+      "default": "",
+      "properties": {
+        "skip_host_depletion": {
+          "type": "boolean",
+          "description": "Skip host read depletion entirely. Not recommended for clinical samples where human reads may be present.",
+          "default": false
+        },
+        "use_nohuman": {
+          "type": "boolean",
+          "description": "Use nohuman (Kraken2-based) for host read depletion. This is the default when no method is specified. Database is downloaded automatically and cached in params.nohuman_db.",
+          "default": false
+        },
+        "use_hostile": {
+          "type": "boolean",
+          "description": "Use hostile for host read depletion. Requires --host_reference pointing to a hostile index directory.",
+          "default": false
+        },
+        "use_minimap2": {
+          "type": "boolean",
+          "description": "Use minimap2 alignment against GRCh38 no-alt for host read depletion. If --host_reference is not supplied, GRCh38 no-alt is downloaded automatically and cached in host_genome_cache.",
+          "default": false
+        },
+        "nohuman_db": {
+          "type": "string",
+          "description": "Directory where the nohuman Kraken2 database is cached between runs. Defaults to ~/.quiver/nohuman_db.",
+          "format": "directory-path"
+        },
+        "force_nohuman_db_download": {
+          "type": "boolean",
+          "description": "Force re-download of the nohuman Kraken2 database even if a cached database exists in nohuman_db.",
+          "default": false
+        },
+        "host_genome_cache": {
+          "type": "string",
+          "description": "Directory where the downloaded GRCh38 no-alt FASTA and minimap2 index are cached between runs (minimap2 mode only). Defaults to ~/.quiver/references.",
+          "format": "directory-path"
+        },
+        "force_host_genome_download": {
+          "type": "boolean",
+          "description": "Force re-download and re-indexing of GRCh38 no-alt even if a cached .mmi exists in host_genome_cache (minimap2 mode only).",
+          "default": false
         }
       }
     },
@@ -249,11 +304,6 @@
         "allow_conda_fallback": {
           "type": "boolean",
           "description": "Allow conda environment fallback if container image fails to pull.",
-          "default": false
-        },
-        "use_hostile": {
-          "type": "boolean",
-          "description": "Use hostile instead of minimap2 for host read depletion (default: minimap2 vs GRCh38 no-alt).",
           "default": false
         },
         "clair3_model_dir": {
@@ -323,6 +373,9 @@
     },
     {
       "$ref": "#/definitions/haplotype_reconstruction"
+    },
+    {
+      "$ref": "#/definitions/host_depletion"
     },
     {
       "$ref": "#/definitions/optional_modules"

@@ -110,10 +110,14 @@ process LOFREQ_CALL {
 
     LOFREQ_PP_THREADS=\$(( ${params.lofreq_pp_threads} < ${task.cpus} ? ${params.lofreq_pp_threads} : ${task.cpus} ))
 
+    BAQ_FLAG=""
+    ${ params.lofreq_no_baq ? 'BAQ_FLAG="-B"' : '' }
+
     if [ "\${LOFREQ_PP_THREADS}" -gt 1 ]; then
         lofreq call-parallel \\
             --pp-threads "\${LOFREQ_PP_THREADS}" \\
             --call-indels \\
+            \${BAQ_FLAG} \\
             --min-mq ${params.min_mq} \\
             --min-bq ${params.min_bq} \\
             --min-alt-bq ${params.min_alt_bq} \\
@@ -125,6 +129,7 @@ process LOFREQ_CALL {
     else
         lofreq call \\
             --call-indels \\
+            \${BAQ_FLAG} \\
             --min-mq ${params.min_mq} \\
             --min-bq ${params.min_bq} \\
             --min-alt-bq ${params.min_alt_bq} \\

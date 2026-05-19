@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-check_samplesheet.py — validate the hcv-quasi samplesheet CSV.
+check_samplesheet.py — validate the QuIVER samplesheet CSV.
 
 Usage:
     check_samplesheet.py <samplesheet.csv>

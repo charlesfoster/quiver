@@ -1,6 +1,6 @@
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    hcv-quasi — Top-level workflow (Prompt 24).
+    QuIVER — Top-level workflow.
 
     Wiring overview (see CLAUDE.md Section 2 for the ASCII diagram and
     docs/data_flow.md for the per-step rationale):
@@ -26,7 +26,7 @@
                         -> (optional) CLAIR3 + concordance
                     -> PREP_DEVIDER_INPUT
                         -> DEVIDER (gated by LOW_COVERAGE)
-                        -> STITCH_HAPLOTYPES
+                        -> FORMAT_HAPLOTYPES
                 |
                 v
             groupTuple(by: 0) on meta.id  ── per-sample collapse
@@ -45,7 +45,7 @@
                                   but keep LoFreq.  Flag passed to SAMPLE_REPORT.
         LOW_COVERAGE_CONSENSUS  — APPLY_CONSENSUS sentinel; downstream continues,
                                   flag passed to SAMPLE_REPORT.
-        devider.failed          — DEVIDER process; STITCH_HAPLOTYPES degrades
+        devider.failed          — DEVIDER process; FORMAT_HAPLOTYPES degrades
                                   gracefully (empty FASTA + fallback JSON).
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -59,6 +59,9 @@ include { RAW_QC                   } from '../subworkflows/local/raw_qc'
 include { CHOPPER                  } from '../modules/local/chopper/main'
 include { NANOQ as NANOQ_FILT      } from '../modules/local/nanoq/main'
 include { NANOQ as NANOQ_POSTHOST  } from '../modules/local/nanoq/main'
+include { DOWNLOAD_NOHUMAN_DB      } from '../modules/local/download_nohuman_db/main'
+include { HOST_DEPLETE_NOHUMAN     } from '../modules/local/host_deplete_nohuman/main'
+include { DOWNLOAD_HOST_REFERENCE  } from '../modules/local/download_host_reference/main'
 include { INDEX_HOST               } from '../modules/local/index_host/main'
 include { HOST_DEPLETE_MINIMAP2    } from '../modules/local/host_deplete_minimap2/main'
 include { HOST_DEPLETE_HOSTILE     } from '../modules/local/host_deplete_hostile/main'
@@ -74,8 +77,9 @@ include { LOFREQ_CALL              } from '../modules/local/lofreq_call/main'
 include { VARIANT_FILTER           } from '../modules/local/variant_filter/main'
 include { CLAIR3                   } from '../modules/local/clair3/main'
 include { PREP_DEVIDER_INPUT       } from '../subworkflows/local/prep_devider_input'
+include { FILTER_VCF_FOR_DEVIDER   } from '../modules/local/filter_vcf_for_devider/main'
 include { DEVIDER                  } from '../modules/local/devider/main'
-include { STITCH_HAPLOTYPES        } from '../modules/local/stitch_haplotypes/main'
+include { FORMAT_HAPLOTYPES        } from '../modules/local/format_haplotypes/main'
 include { MAKE_ROUND2_MASK         } from '../modules/local/make_round2_mask/main'
 include { BUILD_ROUND2_CONSENSUS   } from '../modules/local/build_round2_consensus/main'
 include { SAMPLE_REPORT            } from '../modules/local/sample_report/main'
@@ -123,7 +127,7 @@ process DUMP_SOFTWARE_VERSIONS {
     script:
     """
     {
-        echo "# hcv-quasi software versions"
+        echo "# QuIVER software versions"
         echo "# pipeline_version: ${workflow.manifest.version ?: 'unknown'}"
         echo "# nextflow_version: ${nextflow.version}"
         echo "# run_date: \$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -170,14 +174,36 @@ process RENDER_RUN_SUMMARY {
     path "run_summary.json"
 
     script:
+    // Read samplesheet to capture the original input order of sample IDs.
+    // This lets the run summary table match the user's samplesheet ordering.
+    def _sample_order = []
+    try {
+        def _ss = file(params.input)
+        if (_ss.exists()) {
+            _ss.readLines().drop(1).each { line ->
+                def sid = line.split(',')[0].trim().replaceAll('"', '').replaceAll("'", '')
+                if (sid) _sample_order << sid
+            }
+        }
+    } catch (Exception _e) { /* ignore — table falls back to status sort */ }
+
+    def _ri_b64 = groovy.json.JsonOutput.toJson([
+        pipeline_version: (workflow.manifest.version ?: 'QuIVER'),
+        nextflow_version: workflow.nextflow.version.toString(),
+        params          : params.findAll { true },
+        sample_order    : _sample_order,
+    ]).bytes.encodeBase64().toString()
     """
-    pip install --quiet jinja2 2>&1 | grep -v "^Requirement already" || true
+    pip install --quiet jinja2 2>/dev/null
+
+    python3 -c "import base64,json; open('run_info.json','w').write(json.dumps(json.loads(base64.b64decode('${_ri_b64}')),indent=2))"
 
     python3 ${projectDir}/bin/render_run_summary.py \\
         --sample-jsons ${sample_jsons} \\
+        --run-info run_info.json \\
         --output-html run_summary.html \\
         --output-json run_summary.json \\
-        --pipeline-version "${workflow.manifest.version ?: 'hcv-quasi'}"
+        --pipeline-version "${workflow.manifest.version ?: 'QuIVER'}"
     """
 
     stub:
@@ -221,7 +247,7 @@ process EMIT_FAILURE_FLAG {
         echo "Sample: ${meta.id}"
         echo "Timestamp: \$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo
-        echo "This sample was short-circuited by the hcv-quasi pipeline."
+        echo "This sample was short-circuited by the QuIVER pipeline."
         echo "See ${params.outdir}/${meta.id}/ for the upstream sentinel file."
     } > ${meta.id}.PIPELINE_FLAG.txt
     """
@@ -238,7 +264,7 @@ process EMIT_FAILURE_FLAG {
 //                              MAIN WORKFLOW
 // ===========================================================================
 
-workflow HCV_QUASI {
+workflow QUIVER {
 
     // ---------------------------------------------------------------------
     // Master version channel — every module appends its versions.yml here.
@@ -271,6 +297,13 @@ workflow HCV_QUASI {
     }
     if (params.devider_min_abund <= 0 || params.devider_min_abund >= 1) {
         error "Parameter error: --devider_min_abund (${params.devider_min_abund}) must be in the range (0, 1)."
+    }
+    if (params.devider_min_af <= 0 || params.devider_min_af > 1) {
+        error "Parameter error: --devider_min_af (${params.devider_min_af}) must be in the range (0, 1]."
+    }
+    if (params.devider_min_af < params.min_report_af) {
+        error "Parameter error: --devider_min_af (${params.devider_min_af}) must be >= --min_report_af (${params.min_report_af}). " +
+              "The DEVIDER VCF filter cannot be looser than the analysis VCF filter."
     }
     if (params.min_secondary_fraction < 0 || params.min_secondary_fraction >= 1) {
         error "Parameter error: --min_secondary_fraction (${params.min_secondary_fraction}) must be in the range [0, 1)."
@@ -342,34 +375,93 @@ workflow HCV_QUASI {
 
 
     // =====================================================================
-    // Step 5.4 — HOST_DEPLETE (minimap2 or hostile)
+    // Step 5.4 — HOST_DEPLETE
+    //
+    // Three methods — specify at most one flag; nohuman is the default:
+    //   --use_nohuman   (default) Kraken2-based; DB auto-downloaded to params.nohuman_db
+    //   --use_hostile             alignment-based; requires --host_reference (hostile index dir)
+    //   --use_minimap2            alignment vs GRCh38; resolves reference:
+    //       --host_reference <.mmi>  → use pre-built index directly
+    //       --host_reference <FASTA> → build index via INDEX_HOST
+    //       (none)                   → auto-download GRCh38 no-alt + build .mmi;
+    //                                  cached in params.host_genome_cache for future runs
     // =====================================================================
-    if (params.host_reference) {
-        ch_host_input = Channel.fromPath(params.host_reference, checkIfExists: true)
+    def _method_count = [params.use_nohuman, params.use_hostile, params.use_minimap2].count { it }
+    if (_method_count > 1) {
+        error "Specify at most one of --use_nohuman, --use_hostile, --use_minimap2."
+    }
+    def host_method = params.use_hostile  ? 'hostile'
+                    : params.use_minimap2 ? 'minimap2'
+                    : 'nohuman'
 
-        if (params.use_hostile) {
-            // hostile expects a directory of index files; pass through as-is.
-            HOST_DEPLETE_HOSTILE(ch_post_filter_reads, ch_host_input.first())
-            ch_versions       = ch_versions.mix(HOST_DEPLETE_HOSTILE.out.versions)
-            ch_hostdep_reads  = HOST_DEPLETE_HOSTILE.out.reads
-            ch_host_stats     = HOST_DEPLETE_HOSTILE.out.stats_json
-        } else {
-            // minimap2 strategy: build the .mmi via INDEX_HOST (skipped by
-            // Nextflow caching when the FASTA hash matches a previous run).
-            INDEX_HOST(ch_host_input)
-            ch_versions       = ch_versions.mix(INDEX_HOST.out.versions)
-            HOST_DEPLETE_MINIMAP2(ch_post_filter_reads, INDEX_HOST.out.index.first())
-            ch_versions       = ch_versions.mix(HOST_DEPLETE_MINIMAP2.out.versions)
-            ch_hostdep_reads  = HOST_DEPLETE_MINIMAP2.out.reads
-            ch_host_stats     = HOST_DEPLETE_MINIMAP2.out.stats_json
-        }
-    } else {
-        // No host_reference supplied: skip depletion, pass reads through.
-        // Synthesize an empty-shape host_stats channel so downstream report
-        // joins still emit at least once per sample.
-        log.warn "No --host_reference supplied; skipping host depletion. Provide --host_reference for production runs."
+    if (params.skip_host_depletion) {
+        log.warn "Host depletion skipped (--skip_host_depletion). Not recommended for clinical samples."
         ch_hostdep_reads = ch_post_filter_reads
         ch_host_stats    = Channel.empty()
+
+    } else if (host_method == 'hostile') {
+        if (!params.host_reference) {
+            error "hostile (--use_hostile) requires --host_reference pointing to a hostile index directory."
+        }
+        def ch_hostile_idx = Channel.fromPath(params.host_reference, checkIfExists: true).first()
+        HOST_DEPLETE_HOSTILE(ch_post_filter_reads, ch_hostile_idx)
+        ch_versions      = ch_versions.mix(HOST_DEPLETE_HOSTILE.out.versions)
+        ch_hostdep_reads = HOST_DEPLETE_HOSTILE.out.reads
+        ch_host_stats    = HOST_DEPLETE_HOSTILE.out.stats_json
+
+    } else if (host_method == 'nohuman') {
+        def ch_nohuman_db
+        def cached_db = file(params.nohuman_db)
+        def db_is_cached = cached_db.isDirectory() && cached_db.list().size() > 0
+        if (db_is_cached && !params.force_nohuman_db_download) {
+            log.info "Using cached nohuman database: ${params.nohuman_db}"
+            ch_nohuman_db = Channel.value(cached_db)
+        } else {
+            def reason = params.force_nohuman_db_download
+                ? "Re-downloading nohuman database (--force_nohuman_db_download)"
+                : "No nohuman database found in cache (${params.nohuman_db}); downloading (~4 GB)"
+            log.warn reason
+            DOWNLOAD_NOHUMAN_DB()
+            ch_versions   = ch_versions.mix(DOWNLOAD_NOHUMAN_DB.out.versions)
+            ch_nohuman_db = DOWNLOAD_NOHUMAN_DB.out.db.first()
+        }
+        HOST_DEPLETE_NOHUMAN(ch_post_filter_reads, ch_nohuman_db)
+        ch_versions      = ch_versions.mix(HOST_DEPLETE_NOHUMAN.out.versions)
+        ch_hostdep_reads = HOST_DEPLETE_NOHUMAN.out.reads
+        ch_host_stats    = HOST_DEPLETE_NOHUMAN.out.stats_json
+
+    } else {
+        // minimap2 alignment-based depletion
+        def ch_host_mmi
+        if (params.host_reference) {
+            def href = params.host_reference.toString()
+            if (href.endsWith('.mmi')) {
+                ch_host_mmi = Channel.fromPath(params.host_reference, checkIfExists: true).first()
+            } else {
+                def ch_host_fasta = Channel.fromPath(params.host_reference, checkIfExists: true)
+                INDEX_HOST(ch_host_fasta)
+                ch_versions = ch_versions.mix(INDEX_HOST.out.versions)
+                ch_host_mmi = INDEX_HOST.out.index.first()
+            }
+        } else {
+            def cached_mmi = file("${params.host_genome_cache}/GRCh38_no_alt.mmi")
+            if (cached_mmi.exists() && !params.force_host_genome_download) {
+                log.info "Using cached host reference: ${cached_mmi}"
+                ch_host_mmi = Channel.value(cached_mmi)
+            } else {
+                def reason = cached_mmi.exists()
+                    ? "Re-downloading host reference (--force_host_genome_download)"
+                    : "No host reference found in cache (${params.host_genome_cache}); downloading GRCh38 no-alt (~1 GB, ~15 min)"
+                log.warn reason
+                DOWNLOAD_HOST_REFERENCE()
+                ch_versions = ch_versions.mix(DOWNLOAD_HOST_REFERENCE.out.versions)
+                ch_host_mmi = DOWNLOAD_HOST_REFERENCE.out.mmi.first()
+            }
+        }
+        HOST_DEPLETE_MINIMAP2(ch_post_filter_reads, ch_host_mmi)
+        ch_versions      = ch_versions.mix(HOST_DEPLETE_MINIMAP2.out.versions)
+        ch_hostdep_reads = HOST_DEPLETE_MINIMAP2.out.reads
+        ch_host_stats    = HOST_DEPLETE_MINIMAP2.out.stats_json
     }
 
 
@@ -572,12 +664,19 @@ workflow HCV_QUASI {
     PREP_DEVIDER_INPUT(ch_prep_lofreq_input)  // [meta, bam, bai, consensus_fasta] — same shape as LoFreq prep
     ch_versions = ch_versions.mix(PREP_DEVIDER_INPUT.out.versions)
 
+    // Apply DEVIDER-specific AF threshold to the analysis VCF.
+    // VARIANT_FILTER outputs PASS variants at >= min_report_af (1%); DEVIDER
+    // needs a higher floor (params.devider_min_af, default 5%) to avoid graph
+    // saturation from low-AF noise variants.
+    FILTER_VCF_FOR_DEVIDER(VARIANT_FILTER.out.vcf)
+    ch_versions = ch_versions.mix(FILTER_VCF_FOR_DEVIDER.out.versions)
+
     // Build DEVIDER input: [meta, bam, bai, vcf, tbi, ref_fasta], but only for
     // branches that did NOT trigger LOW_COVERAGE in MOSDEPTH.
     ch_devider_bam_keyed = PREP_DEVIDER_INPUT.out.devider_bam
         .map { meta, bam, bai -> tuple([meta.id, meta.genotype], meta, bam, bai) }
 
-    ch_filtered_vcf_keyed = VARIANT_FILTER.out.vcf
+    ch_filtered_vcf_keyed = FILTER_VCF_FOR_DEVIDER.out.vcf
         .map { meta, vcf, tbi -> tuple([meta.id, meta.genotype], vcf, tbi) }
 
     ch_consensus_for_devider = BUILD_CONSENSUS.out.consensus
@@ -605,8 +704,8 @@ workflow HCV_QUASI {
     DEVIDER(ch_devider_run_input)
     ch_versions = ch_versions.mix(DEVIDER.out.versions)
 
-    STITCH_HAPLOTYPES(DEVIDER.out.outdir)
-    ch_versions = ch_versions.mix(STITCH_HAPLOTYPES.out.versions)
+    FORMAT_HAPLOTYPES(DEVIDER.out.outdir)
+    ch_versions = ch_versions.mix(FORMAT_HAPLOTYPES.out.versions)
 
 
     // =====================================================================
@@ -620,7 +719,7 @@ workflow HCV_QUASI {
 
     // Collapse per-branch [meta, file] channels into per-sample
     // [sample_id, [files...]] using groupTuple.  Branches with no output
-    // (e.g. STITCH for low-cov samples that skipped DEVIDER) are absent
+    // (e.g. FORMAT_HAPLOTYPES for low-cov samples that skipped DEVIDER) are absent
     // from the channel — groupTuple still emits at least one item per
     // sample as long as at least one branch contributed.
     ch_mosdepth_by_sample = MOSDEPTH.out.summary
@@ -639,7 +738,7 @@ workflow HCV_QUASI {
         .map { meta, f -> tuple(meta.id, f) }
         .groupTuple(by: 0)
 
-    ch_stitch_by_sample = STITCH_HAPLOTYPES.out.report
+    ch_haplotype_report_by_sample = FORMAT_HAPLOTYPES.out.report
         .map { meta, f -> tuple(meta.id, f) }
         .groupTuple(by: 0)
 
@@ -681,29 +780,29 @@ workflow HCV_QUASI {
         .join(ch_mosdepth_bed_by_sample, by: 0, remainder: true)
         .join(ch_variants_by_sample,     by: 0, remainder: true)
         .join(ch_flagstat_by_sample,     by: 0, remainder: true)
-        .join(ch_stitch_by_sample,       by: 0, remainder: true)
+        .join(ch_haplotype_report_by_sample, by: 0, remainder: true)
         .join(ch_nanoplot_by_sample,     by: 0, remainder: true)
         .map { sid, meta, summary, nanoq_raw, nanoq_filt, host_stats,
                mosdepth_files, mosdepth_beds, variant_tsvs, flagstat_files,
-               stitch_reports, nanoplot_dirs ->
+               haplotype_reports, nanoplot_dirs ->
             tuple(
                 meta,
-                summary        ?: [],
-                nanoq_raw      ?: [],
-                nanoq_filt     ?: [],
-                host_stats     ?: [],
-                mosdepth_files ?: [],
-                mosdepth_beds  ?: [],
-                variant_tsvs   ?: [],
-                flagstat_files ?: [],
-                stitch_reports ?: [],
+                summary           ?: [],
+                nanoq_raw         ?: [],
+                nanoq_filt        ?: [],
+                host_stats        ?: [],
+                mosdepth_files    ?: [],
+                mosdepth_beds     ?: [],
+                variant_tsvs      ?: [],
+                flagstat_files    ?: [],
+                haplotype_reports ?: [],
                 nanoplot_dirs  ?: [],
                 []  // flag_files placeholder — sentinels published separately
             )
         }
         // Drop samples with no genotype summary (NO_HCV_DETECTED short-circuits).
         // Those samples get a PIPELINE_FLAG.txt via EMIT_FAILURE_FLAG instead.
-        .filter { meta, summary, _na, _nf, _hs, _md, _mb, _vt, _fs, _sr, _np, _ff ->
+        .filter { meta, summary, _na, _nf, _hs, _md, _mb, _vt, _fs, _hr, _np, _ff ->
             summary != null && !(summary instanceof List && summary.isEmpty())
         }
 
@@ -735,12 +834,9 @@ workflow HCV_QUASI {
         .mix(MOSDEPTH.out.summary.map            { meta, f -> f })
         .mix(MOSDEPTH.out.regions.map            { meta, f -> f })
 
-    ch_multiqc_config = Channel.fromPath(
-        "${projectDir}/assets/multiqc_config.yml",
-        checkIfExists: true,
-    )
+    ch_multiqc_config = Channel.value(file("${projectDir}/assets/multiqc_config.yml", checkIfExists: true))
 
-    MULTIQC(ch_multiqc_files.collect(), ch_multiqc_config.first())
+    MULTIQC(ch_multiqc_files.collect(), ch_multiqc_config)
     ch_versions = ch_versions.mix(MULTIQC.out.versions)
 
 

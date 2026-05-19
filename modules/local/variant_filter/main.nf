@@ -92,6 +92,8 @@ process VARIANT_FILTER {
     #
     # -i  inclusion expression (keep sites matching the filter).
     #     NOT -e (exclusion) — use -i for AF threshold filtering.
+    # -f PASS  keep only FILTER=PASS variants (excludes LoFreq strand-bias
+    #     rejects and other flagged calls).
     #
     # LoFreq INFO fields:
     #   AF  allele frequency (float, range 0–1).
@@ -100,11 +102,13 @@ process VARIANT_FILTER {
     # Retains only variants with:
     #   AF >= params.min_report_af  (default 0.01 = 1%)
     #   DP >= params.min_variant_depth (default 20)
+    #   FILTER = PASS
     #
     # -Oz  output gzip-compressed VCF.
     # ----------------------------------------------------------------
     bcftools view \\
-        -i "AF>=${params.min_report_af} && DP>=${params.min_variant_depth}" \\
+        -i "AF>=${params.min_report_af} && DP>=${params.min_variant_depth} && INFO/SB<${params.max_sb}" \\
+        -f PASS \\
         -Oz \\
         -o ${meta.id}_${meta.genotype}_filtered.vcf.gz \\
         ${vcf}

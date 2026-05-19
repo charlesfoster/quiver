@@ -1,6 +1,6 @@
 # Usage — HCV Quasispecies Pipeline
 
-This document explains how to install, configure, and run `hcv-quasi`.
+This document explains how to install, configure, and run `QuIVER`.
 For architecture and design decisions see [CLAUDE.md](../CLAUDE.md).
 For parameter descriptions see [docs/parameters.md](parameters.md).
 

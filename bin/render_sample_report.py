@@ -21,7 +21,7 @@ Usage
         [--mosdepth-summaries <file1> [<file2> ...]] \\
         [--variant-tsvs <file1> [<file2> ...]] \\
         [--flagstats <file1> [<file2> ...]] \\
-        [--stitch-reports <file1> [<file2> ...]] \\
+        [--haplotype-reports <file1> [<file2> ...]] \\
         [--nanoplot-dirs <dir1> [<dir2> ...]] \\
         [--flags <flag1> [<flag2> ...]] \\
         --output-html <sid_summary.html> \\
@@ -287,12 +287,12 @@ def parse_flagstat(path: Path | None) -> dict | None:
     return result
 
 
-def parse_stitch_report(path: Path | None) -> dict | None:
+def parse_haplotype_report(path: Path | None) -> dict | None:
     """
-    Parse a *_stitch_report.json produced by STITCH_HAPLOTYPES.
+    Parse a *_haplotype_report.json produced by FORMAT_HAPLOTYPES.
 
     Normalises chain dicts to add template-friendly aliases and computes
-    longest_chain_length.  Stitch JSON uses: id, length_bp, abundance_lower_bound,
+    longest_chain_length.  JSON uses: id, length_bp, abundance_lower_bound,
     windows (list); template and JSON summary use: chain_id, total_length,
     abundance, n_windows.
     """
@@ -427,7 +427,7 @@ def _make_coverage_svg(regions: list[dict], max_width: int = 900, height: int = 
 def _extract_genotype_from_filename(filename: str, sample_id: str) -> str | None:
     """
     Extract the genotype label from a filename like:
-        P001_1a_stitch_report.json
+        P001_1a_haplotype_report.json
         P001_2b.mosdepth.summary.txt
         P001_3a_variants.tsv
         P001_1a_round2.flagstat
@@ -439,7 +439,7 @@ def _extract_genotype_from_filename(filename: str, sample_id: str) -> str | None
     prefix = sample_id + "_"
     if stem.startswith(prefix):
         remainder = stem[len(prefix):]
-        # remainder might be "1a_stitch_report.json" or "1a.mosdepth.summary.txt"
+        # remainder might be "1a_haplotype_report.json" or "1a.mosdepth.summary.txt"
         token = re.split(r"[_.]", remainder)[0]
         return token if token else None
     # Try to find a genotype-like token anywhere in the name
@@ -474,7 +474,7 @@ def build_context(args: argparse.Namespace) -> dict:
     """Collect all data and return the Jinja2 template context dict."""
 
     run_date        = date.today().isoformat()
-    pipeline_version = args.pipeline_version or "hcv-quasi (development)"
+    pipeline_version = args.pipeline_version or "QuIVER (development)"
     sample_id       = args.sample_id
 
     # ---- Genotype summary ----
@@ -571,11 +571,11 @@ def build_context(args: argparse.Namespace) -> dict:
     mosdepth_bed_by_gt = _index_files(args.mosdepth_beds)
     variants_by_gt  = _index_files(args.variant_tsvs)
     flagstat_by_gt  = _index_files(args.flagstats)
-    stitch_by_gt    = _index_files(args.stitch_reports)
+    haplotype_by_gt = _index_files(args.haplotype_reports)
 
     # Collect all distinct genotype keys from all input files + branches_to_run
     all_gt_keys: set[str] = set(branches_to_run)
-    for d in [mosdepth_by_gt, mosdepth_bed_by_gt, variants_by_gt, flagstat_by_gt, stitch_by_gt]:
+    for d in [mosdepth_by_gt, mosdepth_bed_by_gt, variants_by_gt, flagstat_by_gt, haplotype_by_gt]:
         all_gt_keys |= set(d.keys())
 
     branches: list[dict] = []
@@ -598,7 +598,7 @@ def build_context(args: argparse.Namespace) -> dict:
         flagstat_data = parse_flagstat(flagstat_by_gt.get(gt))
 
         # Haplotypes
-        stitch_data = parse_stitch_report(stitch_by_gt.get(gt))
+        stitch_data = parse_haplotype_report(haplotype_by_gt.get(gt))
 
         coverage_mean  = mosdepth_data["mean"] if mosdepth_data else None
         variant_count  = len(variant_data) if variant_data is not None else None
@@ -628,6 +628,13 @@ def build_context(args: argparse.Namespace) -> dict:
     # ---- Overall status ----
     overall_status = _determine_status(flags, is_mixed, primary_genotype)
 
+    run_info: dict | None = None
+    if args.run_info:
+        try:
+            run_info = json.loads(Path(args.run_info).read_text())
+        except Exception as exc:
+            print(f"WARNING: Cannot parse --run-info {args.run_info}: {exc}", file=sys.stderr)
+
     context = {
         "sample_id":        sample_id,
         "run_date":         run_date,
@@ -640,6 +647,7 @@ def build_context(args: argparse.Namespace) -> dict:
         "branches":         branches,
         "nanoplot_images":  nanoplot_images,
         "flags":            flags,
+        "run_info":         run_info,
     }
     return context
 
@@ -696,6 +704,7 @@ def build_json_summary(context: dict) -> dict:
         "funnel":           context["funnel"],
         "branches":         branches_json,
         "flags":            context["flags"],
+        "run_info":         context.get("run_info"),
     }
 
 
@@ -705,7 +714,7 @@ def build_json_summary(context: dict) -> dict:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Render per-sample HTML + JSON report for hcv-quasi.",
+        description="Render per-sample HTML + JSON report for QuIVER.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--sample-id",          required=True)
@@ -725,14 +734,16 @@ def parse_args() -> argparse.Namespace:
                         help="Per-branch *_variants.tsv files")
     parser.add_argument("--flagstats",           nargs="*", default=None,
                         help="Per-branch *_round2.flagstat files")
-    parser.add_argument("--stitch-reports",      nargs="*", default=None,
-                        help="Per-branch *_stitch_report.json files")
+    parser.add_argument("--haplotype-reports",    nargs="*", default=None,
+                        help="Per-branch *_haplotype_report.json files")
     parser.add_argument("--nanoplot-dirs",       nargs="*", default=None,
                         help="NanoPlot output directories (PNG images embedded)")
     parser.add_argument("--flags",               nargs="*", default=None,
                         help="Sentinel flag files (e.g. *.LOW_COVERAGE)")
     parser.add_argument("--output-html",         required=True)
     parser.add_argument("--output-json",         required=True)
+    parser.add_argument("--run-info",            default=None,
+                        help="JSON file with command_line, run_name, nextflow_version, params")
     parser.add_argument("--template",            default=None,
                         help="Path to sample_report.html.j2 (auto-detected if absent)")
     parser.add_argument("--pipeline-version",    default=None,

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_integration.sh — Integration test harness for hcv-quasi
+# test_integration.sh — Integration test harness for QuIVER
 #
 # Usage:
 #   tests/test_integration.sh              # stub-run only (fast, no tools needed)
@@ -41,7 +41,7 @@ if [[ -z "$OUTDIR" ]]; then
     OUTDIR="${PROJECT_DIR}/test_out_$(date +%Y%m%d_%H%M%S)"
 fi
 
-echo "=== hcv-quasi integration test ==="
+echo "=== QuIVER integration test ==="
 echo "Project : ${PROJECT_DIR}"
 echo "Nextflow: NXF_VER=${NXF_VER}"
 echo "Outdir  : ${OUTDIR}"

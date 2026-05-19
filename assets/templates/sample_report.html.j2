@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>hcv-quasi | {{ sample_id }} Summary</title>
+<title>QuIVER | {{ sample_id }} Summary</title>
 <style>
 /* -----------------------------------------------------------------------
-   hcv-quasi per-sample report — self-contained HTML, inline CSS only.
+   QuIVER per-sample report — self-contained HTML, inline CSS only.
    No external dependencies: opens in a browser without network access.
    ----------------------------------------------------------------------- */
 *, *::before, *::after { box-sizing: border-box; }
@@ -274,8 +274,33 @@ details.branch-section[open] > summary::before { transform: rotate(90deg); }
     font-family: monospace;
 }
 .hap-chain .hap-id { font-weight: 700; color: #1a1a2e; }
-.hap-chain .hap-af { color: #3a5bd9; margin-left: 10px; }
+.hap-chain .hap-abundance { color: #3a5bd9; margin-left: 10px; }
 .hap-chain .hap-len { color: #27ae60; margin-left: 10px; }
+
+/* ---- Run parameters section ---- */
+.params-meta { font-size: 13px; margin-bottom: 12px; line-height: 1.8; }
+.params-meta code {
+    display: block;
+    background: #f0f2f8;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    word-break: break-all;
+    margin: 4px 0 10px;
+    border: 1px solid #dde1ea;
+}
+.params-table { font-size: 12px; margin-top: 8px; width: auto; }
+.params-table th { font-size: 11px; }
+.params-table td:first-child { font-family: monospace; color: #3a5bd9; white-space: nowrap; padding-right: 20px; }
+details.params-details { margin-top: 12px; }
+details.params-details > summary {
+    cursor: pointer;
+    font-size: 12px;
+    color: #3a5bd9;
+    padding: 4px 0;
+    user-select: none;
+}
+details.params-details > summary:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -283,7 +308,7 @@ details.branch-section[open] > summary::before { transform: rotate(90deg); }
 
   <!-- ===== HEADER ===== -->
   <div class="report-header">
-    <h1>hcv-quasi &mdash; Sample Report: {{ sample_id }}</h1>
+    <h1>QuIVER &mdash; Sample Report: {{ sample_id }}</h1>
     <div class="meta-line">
       <span>Run date: {{ run_date }}</span>
       <span>Pipeline: {{ pipeline_version }}</span>
@@ -566,21 +591,17 @@ details.branch-section[open] > summary::before { transform: rotate(90deg); }
               {% endif %}
             </div>
             {% if branch.haplotypes.chains %}
-              <div class="branch-subsection-title" style="margin-top:8px;">Haplotype Chains</div>
+              <div class="branch-subsection-title" style="margin-top:8px;">Haplotypes</div>
               {% for chain in branch.haplotypes.chains %}
               <div class="hap-chain">
                 <span class="hap-id">{{ chain.chain_id | default(chain.id) | default("haplotype_" + loop.index0 | string) }}</span>
                 {% set abund = chain.abundance if chain.abundance is defined else chain.abundance_lower_bound %}
                 {% if abund is not none and abund < 1.0 %}
-                  <span class="hap-af">AF &ge; {{ (abund * 100) | round(1) }}%</span>
+                  <span class="hap-abundance">Abundance: {{ (abund * 100) | round(2) }}%</span>
                 {% endif %}
                 {% set tlen = chain.total_length if chain.total_length is defined else chain.length_bp %}
                 {% if tlen is not none %}
                   <span class="hap-len">{{ "{:,}".format(tlen) }} bp</span>
-                {% endif %}
-                {% set nwin = chain.n_windows if chain.n_windows is defined else (chain.windows | length if chain.windows is defined else none) %}
-                {% if nwin is not none and nwin > 1 %}
-                  &bull; {{ nwin }} window(s)
                 {% endif %}
               </div>
               {% endfor %}
@@ -627,6 +648,64 @@ details.branch-section[open] > summary::before { transform: rotate(90deg); }
       <span class="flag-explain">No pipeline flags raised for this sample.</span>
     {% endif %}
   </div>
+
+{% if run_info %}
+  <!-- ===== RUN PARAMETERS ===== -->
+  <div class="section">
+    <div class="section-title">Run Parameters</div>
+    <div class="params-meta">
+      {% if run_info.command_line %}
+      <strong>Command:</strong>
+      <code>{{ run_info.command_line }}</code>
+      {% endif %}
+      {% if run_info.run_name %}<strong>Run name:</strong> {{ run_info.run_name }}&nbsp;&nbsp;&nbsp;{% endif %}
+      <strong>Nextflow:</strong> {{ run_info.nextflow_version }}
+    </div>
+    {% set key_params = [
+        ("min_length",             "Min read length (bp)"),
+        ("max_length",             "Max read length (bp)"),
+        ("min_qual",               "Min read quality (Phred)"),
+        ("min_secondary_fraction", "Mixed infection threshold"),
+        ("min_mean_coverage",      "Min mean coverage (QC pass)"),
+        ("min_consensus_cov",      "Consensus masking depth"),
+        ("lofreq_max_depth",       "LoFreq depth cap (rasusa)"),
+        ("min_af",                 "Min allele frequency (filter)"),
+        ("min_dp",                 "Min read depth (filter)"),
+        ("devider_max_depth",      "DEVIDER depth cap (rasusa)"),
+        ("devider_min_abund",      "DEVIDER min haplotype abundance"),
+        ("run_clair3",             "Clair3 corroboration"),
+        ("skip_host_depletion",    "Host depletion skipped"),
+    ] %}
+    <table class="params-table">
+      <thead><tr><th>Parameter</th><th>Value</th><th>Description</th></tr></thead>
+      <tbody>
+        {% for key, label in key_params %}
+          {% if key in run_info.params %}
+          <tr>
+            <td>{{ key }}</td>
+            <td>{{ run_info.params[key] }}</td>
+            <td style="color:#666;font-size:11px;">{{ label }}</td>
+          </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+    <details class="params-details">
+      <summary>All parameters ({{ run_info.params | length }} total)</summary>
+      <table class="params-table" style="margin-top:8px;">
+        <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
+        <tbody>
+          {% for key, val in run_info.params | dictsort %}
+          <tr>
+            <td>{{ key }}</td>
+            <td style="word-break:break-all;">{{ val }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+  </div>
+{% endif %}
 
 </div><!-- /.page-wrapper -->
 <script>

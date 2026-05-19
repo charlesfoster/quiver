@@ -29,3 +29,11 @@ pixi.lock
 CLAUDE.md
 docs/architecture_reasoning.md
 docs/implementation_prompts.md
+
+# Test run outputs
+test_out_*/
+tmp/
+
+# Ad-hoc exploration scripts and notes
+length_sweep.sh
+clairs-to_question.md

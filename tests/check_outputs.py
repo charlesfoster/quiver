@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-check_outputs.py — Validate hcv-quasi pipeline outputs against expected values.
+check_outputs.py — Validate QuIVER pipeline outputs against expected values.
 
 Usage:
     python3 tests/check_outputs.py <results_dir> <expected_dir>

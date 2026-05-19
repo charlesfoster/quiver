@@ -40,7 +40,7 @@
         low_cov_flag — [meta, "*.LOW_COVERAGE"]  optional
         versions     — versions.yml
 
-    Container: quay.io/biocontainers/mosdepth:0.3.10--h4e814b3_1
+    Container: quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0
     Label: process_medium (4 CPU, 4 GB, 10 min — Step 5.13 resource spec).
 
     Output published to:
@@ -55,8 +55,8 @@ process MOSDEPTH {
     tag "${meta.id}:${meta.genotype}"
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/mosdepth:0.3.10--h4e814b3_1' :
-        'quay.io/biocontainers/mosdepth:0.3.10--h4e814b3_1' }"
+        'https://depot.galaxyproject.org/singularity/mosdepth:0.3.14--h05c3d44_0' :
+        'quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0' }"
     conda "${moduleDir}/environment.yml"
 
     publishDir (
@@ -137,7 +137,7 @@ process MOSDEPTH {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        mosdepth: "0.3.10"
+        mosdepth: "0.3.14"
     END_VERSIONS
     """
 }

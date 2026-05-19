@@ -176,7 +176,7 @@ HTML_TEMPLATE = """\
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>hcv-quasi | Run Summary</title>
+<title>QuIVER | Run Summary</title>
 <style>
 *, *::before, *::after {{ box-sizing: border-box; }}
 body {{
@@ -305,12 +305,35 @@ a.report-link {{
 }}
 a.report-link:hover {{ text-decoration: underline; }}
 .na {{ color: #aaa; font-style: italic; }}
+.params-meta {{ font-size: 13px; margin-bottom: 12px; line-height: 1.8; }}
+.params-meta code {{
+    display: block;
+    background: #f0f2f8;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 11px;
+    word-break: break-all;
+    margin: 4px 0 10px;
+    border: 1px solid #dde1ea;
+}}
+.params-table {{ font-size: 12px; margin-top: 8px; width: auto; }}
+.params-table th {{ font-size: 11px; }}
+.params-table td:first-child {{ font-family: monospace; color: #3a5bd9; white-space: nowrap; padding-right: 20px; }}
+details.params-details {{ margin-top: 12px; }}
+details.params-details > summary {{
+    cursor: pointer;
+    font-size: 12px;
+    color: #3a5bd9;
+    padding: 4px 0;
+    user-select: none;
+}}
+details.params-details > summary:hover {{ text-decoration: underline; }}
 </style>
 </head>
 <body>
 <div class="page-wrapper">
   <div class="report-header">
-    <h1>hcv-quasi &mdash; Run Summary</h1>
+    <h1>QuIVER &mdash; Run Summary</h1>
     <div class="meta-line">
       <span>Run date: {run_date}</span>
       <span>Pipeline: {pipeline_version}</span>
@@ -378,10 +401,78 @@ a.report-link:hover {{ text-decoration: underline; }}
       </tbody>
     </table>
   </div>
+{params_section}
 </div>
 </body>
 </html>
 """
+
+
+_KEY_PARAMS = [
+    ("min_length",             "Min read length (bp)"),
+    ("max_length",             "Max read length (bp)"),
+    ("min_qual",               "Min read quality (Phred)"),
+    ("min_secondary_fraction", "Mixed infection threshold"),
+    ("min_mean_coverage",      "Min mean coverage (QC pass)"),
+    ("min_consensus_cov",      "Consensus masking depth"),
+    ("lofreq_max_depth",       "LoFreq depth cap (rasusa)"),
+    ("min_af",                 "Min allele frequency (filter)"),
+    ("min_dp",                 "Min read depth (filter)"),
+    ("devider_max_depth",      "DEVIDER depth cap (rasusa)"),
+    ("devider_min_abund",      "DEVIDER min haplotype abundance"),
+    ("run_clair3",             "Clair3 corroboration"),
+    ("skip_host_depletion",    "Host depletion skipped"),
+]
+
+
+def _build_params_section(run_info: dict | None) -> str:
+    if not run_info:
+        return ""
+    import html as _html
+    params   = run_info.get("params", {})
+    cmd      = _html.escape(str(run_info.get("command_line", "")))
+    run_name = _html.escape(str(run_info.get("run_name", "")))
+    nf_ver   = _html.escape(str(run_info.get("nextflow_version", "")))
+
+    key_rows = "\n".join(
+        f'        <tr><td>{k}</td>'
+        f'<td>{_html.escape(str(params.get(k, "")))}</td>'
+        f'<td style="color:#666;font-size:11px;">{label}</td></tr>'
+        for k, label in _KEY_PARAMS
+        if k in params
+    )
+    all_rows = "\n".join(
+        f'        <tr><td>{_html.escape(str(k))}</td>'
+        f'<td style="word-break:break-all;">{_html.escape(str(v))}</td></tr>'
+        for k, v in sorted(params.items())
+    )
+    meta_lines = []
+    if cmd:
+        meta_lines.append(f'      <strong>Command:</strong>\n      <code>{cmd}</code>')
+    if run_name:
+        meta_lines.append(f'      <strong>Run name:</strong> {run_name}')
+    meta_lines.append(f'      <strong>Nextflow:</strong> {nf_ver}')
+    meta_html = '\n'.join(meta_lines)
+
+    return (
+        '  <div class="section">\n'
+        '    <div class="section-title">Run Parameters</div>\n'
+        '    <div class="params-meta">\n'
+        f'{meta_html}\n'
+        '    </div>\n'
+        '    <table class="params-table">\n'
+        '      <thead><tr><th>Parameter</th><th>Value</th><th>Description</th></tr></thead>\n'
+        f'      <tbody>\n{key_rows}\n      </tbody>\n'
+        '    </table>\n'
+        f'    <details class="params-details">\n'
+        f'      <summary>All parameters ({len(params)} total)</summary>\n'
+        '      <table class="params-table" style="margin-top:8px;">\n'
+        '        <thead><tr><th>Parameter</th><th>Value</th></tr></thead>\n'
+        f'        <tbody>\n{all_rows}\n        </tbody>\n'
+        '      </table>\n'
+        '    </details>\n'
+        '  </div>'
+    )
 
 
 def _status_badge_html(status: str) -> str:
@@ -394,15 +485,25 @@ def _status_badge_html(status: str) -> str:
     )
 
 
-def _build_table_rows(rows: list[dict]) -> str:
+def _build_table_rows(rows: list[dict], sample_order: list[str] | None = None) -> str:
     lines: list[str] = []
-    sorted_rows = sorted(
-        rows,
-        key=lambda r: (
-            STATUS_SORT_ORDER.get(r["status"], 99),
-            r["sample_id"],
-        ),
-    )
+    if sample_order:
+        order_index = {sid: i for i, sid in enumerate(sample_order)}
+        sorted_rows = sorted(
+            rows,
+            key=lambda r: (
+                order_index.get(r["sample_id"], len(sample_order)),
+                r["sample_id"],
+            ),
+        )
+    else:
+        sorted_rows = sorted(
+            rows,
+            key=lambda r: (
+                STATUS_SORT_ORDER.get(r["status"], 99),
+                r["sample_id"],
+            ),
+        )
     for i, r in enumerate(sorted_rows, 1):
         status_html = _status_badge_html(r["status"])
         mixed_html  = ('<span class="mixed-badge">MIXED</span>'
@@ -453,6 +554,7 @@ def render_html(
     stats: dict,
     run_date: str,
     pipeline_version: str,
+    run_info: dict | None = None,
 ) -> str:
     # Coverage stats for PASS samples only (for representative display)
     pass_covs = [
@@ -463,7 +565,8 @@ def render_html(
     mean_cov_display   = f"{sum(pass_covs)/len(pass_covs):.1f}x" if pass_covs else "n/a"
     median_cov_display = f"{statistics.median(pass_covs):.1f}x"  if pass_covs else "n/a"
 
-    table_rows = _build_table_rows(rows)
+    sample_order = (run_info or {}).get("sample_order") or None
+    table_rows = _build_table_rows(rows, sample_order)
     pass_rate_pct = round(stats["pass_rate"] * 100, 1)
 
     return HTML_TEMPLATE.format(
@@ -478,6 +581,7 @@ def render_html(
         mean_cov_display=mean_cov_display,
         median_cov_display=median_cov_display,
         table_rows=table_rows,
+        params_section=_build_params_section(run_info),
     )
 
 
@@ -487,7 +591,7 @@ def render_html(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Render run-level HTML + JSON summary for hcv-quasi.",
+        description="Render run-level HTML + JSON summary for QuIVER.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
@@ -499,6 +603,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-html",        required=True)
     parser.add_argument("--output-json",        required=True)
     parser.add_argument("--pipeline-version",   default=None)
+    parser.add_argument("--run-info",           default=None,
+                        help="JSON file with command_line, run_name, nextflow_version, params")
     return parser.parse_args()
 
 
@@ -506,7 +612,14 @@ def main() -> None:
     args = parse_args()
 
     run_date        = date.today().isoformat()
-    pipeline_version = args.pipeline_version or "hcv-quasi (development)"
+    pipeline_version = args.pipeline_version or "QuIVER (development)"
+
+    run_info: dict | None = None
+    if args.run_info:
+        try:
+            run_info = json.loads(Path(args.run_info).read_text())
+        except Exception as exc:
+            print(f"WARNING: Cannot parse --run-info {args.run_info}: {exc}", file=sys.stderr)
 
     rows: list[dict] = []
     for json_path_str in args.sample_jsons:
@@ -522,13 +635,14 @@ def main() -> None:
         sys.exit(1)
 
     stats    = compute_run_stats(rows)
-    html_out = render_html(rows, stats, run_date, pipeline_version)
+    html_out = render_html(rows, stats, run_date, pipeline_version, run_info)
 
     json_out = {
         "run_date":         run_date,
         "pipeline_version": pipeline_version,
         **stats,
         "samples":          rows,
+        "run_info":         run_info,
     }
 
     Path(args.output_html).write_text(html_out, encoding="utf-8")

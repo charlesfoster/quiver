@@ -99,7 +99,7 @@ process MULTIQC {
     # ----------------------------------------------------------------
     multiqc \\
         --config ${multiqc_config} \\
-        --title "hcv-quasi pipeline QC report" \\
+        --title "QuIVER pipeline QC report" \\
         --force \\
         --outdir multiqc_report \\
         -q \\
@@ -117,7 +117,7 @@ process MULTIQC {
     cat <<-HTMLEOF > multiqc_report/multiqc_report.html
     <!DOCTYPE html><html><body>
     <h1>MultiQC stub report</h1>
-    <p>hcv-quasi pipeline QC report (stub run)</p>
+    <p>QuIVER pipeline QC report (stub run)</p>
     </body></html>
     HTMLEOF
 

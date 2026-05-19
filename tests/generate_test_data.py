@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-generate_test_data.py — Deterministic synthetic test data generator for hcv-quasi.
+generate_test_data.py — Deterministic synthetic test data generator for QuIVER.
 
 Run once to create all files under test_data/:
     python3 tests/generate_test_data.py --output-dir test_data/
@@ -155,7 +155,7 @@ def write_fastq_gz(path: str, lines: list):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Generate synthetic test data for hcv-quasi integration test')
+        description='Generate synthetic test data for QuIVER integration test')
     parser.add_argument('--output-dir', default='test_data',
                         help='Output directory (default: test_data)')
     args = parser.parse_args()
@@ -269,7 +269,7 @@ def main():
     readme_path = os.path.join(outdir, 'README.md')
     with open(readme_path, 'w') as fh:
         fh.write("""\
-# test_data/ — Synthetic test dataset for hcv-quasi
+# test_data/ — Synthetic test dataset for QuIVER
 
 All files are generated deterministically by `tests/generate_test_data.py`.
 

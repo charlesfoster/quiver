@@ -15,7 +15,7 @@
 
     Part of the BUILD_CONSENSUS subworkflow (Step 5.10).
 
-    Container: mosdepth 0.3.10
+    Container: mosdepth 0.3.14
     Label: process_low
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
@@ -27,8 +27,8 @@ process MAKE_MASK_BED {
     tag "${meta.id}:${meta.genotype}"
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/mosdepth:0.3.10--h4e814b3_1' :
-        'quay.io/biocontainers/mosdepth:0.3.10--h4e814b3_1' }"
+        'https://depot.galaxyproject.org/singularity/mosdepth:0.3.14--h05c3d44_0' :
+        'quay.io/biocontainers/mosdepth:0.3.14--h05c3d44_0' }"
     conda "${moduleDir}/environment.yml"
 
     input:
@@ -86,7 +86,7 @@ process MAKE_MASK_BED {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        mosdepth: "0.3.10"
+        mosdepth: "0.3.14"
     END_VERSIONS
     """
 }

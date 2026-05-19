@@ -1,4 +1,4 @@
-name: hcv-quasi
+name: quiver
 channels:
   - conda-forge
   - bioconda

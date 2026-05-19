@@ -1,4 +1,4 @@
-# hcv-quasi
+# QuIVER
 
 Nextflow DSL2 pipeline for reproducible HCV quasispecies analysis from ONT PromethION reads: genome-wide low-frequency variant calling (LoFreq, ≥1% AF) and global haplotype reconstruction (DEVIDER), with automatic detection and per-genotype branching for mixed-genotype infections.
 
@@ -10,8 +10,8 @@ Architecture, design decisions, and tool version rationale: [CLAUDE.md](CLAUDE.m
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/charlesfoster/hcv-quasi.git
-cd hcv-quasi
+git clone https://github.com/charlesfoster/QuIVER.git
+cd QuIVER
 
 # 2. Print help
 nextflow run main.nf --help

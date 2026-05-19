@@ -43,7 +43,9 @@
                     R10.4.1 error profile.  Use nanopore-r10, NOT nanopore-r9
                     (R9.4.1 — too lenient for R10) and NOT ont (does not exist).
         --min-cov   Per-window minimum depth floor.  Windows below this are skipped.
-        --min-abund Minimum haplotype relative abundance (fraction, e.g. 0.25 = 25%).
+        --min-abund Minimum haplotype relative abundance as a literal percent
+                    (e.g. 0.25 = 0.25%, NOT 25%).  DEVIDER requires both
+                    min-abund AND min-cov to be satisfied (joint constraint).
         --output-reads
                     Emit haplotype-tagged BAM.  Required by the stitching agent
                     (Step 5.20) which walks reads spanning window junctions.
@@ -152,11 +154,11 @@ process DEVIDER {
     #
     # devider --output-reads writes ids.txt (read → haplotype assignments).
     # haplotag_bam re-tags the original BAM with those assignments so the
-    # downstream stitcher (stitch_haplotypes.py) can walk read-spanning
+    # downstream formatter (format_haplotypes.py) can walk read-spanning
     # junction evidence across DEVIDER windows.
     #
     # Only run when ids.txt was actually produced (devider succeeded).
-    # The BAM is placed inside devider_output/ so the stitcher discovers it
+    # The BAM is placed inside devider_output/ so the formatter discovers it
     # via its top-level glob — no index needed because pysam uses until_eof.
     # ----------------------------------------------------------------
     if [ -f devider_output/ids.txt ]; then
