@@ -29,6 +29,8 @@ pixi.lock
 CLAUDE.md
 docs/architecture_reasoning.md
 docs/implementation_prompts.md
+.claude/agents/
+design_prompt.md
 
 # Test run outputs
 test_out_*/

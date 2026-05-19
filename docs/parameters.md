@@ -1,4 +1,4 @@
-# Parameters — HCV Quasispecies Pipeline
+# Parameters — QuIVER
 
 All parameters live under `params { }` in `nextflow.config`.
 Defaults are documented in [docs/configuration.md](configuration.md).
@@ -15,7 +15,7 @@ To set many parameters for a site, write a params JSON file and pass it with `-p
 |---|---|---|---|---|
 | `--input` | path | required | Path to the samplesheet CSV. Must contain `sample_id`, `fastq`, and optionally `metadata_json` columns. | Always required. |
 | `--reference_panel` | path | `assets/hcv_references.fasta` | HCV reference panel FASTA (238 sequences). Used for Round 1 competitive mapping and genotype classification. | Replace with a custom panel if working with non-standard genotypes or if the bundled panel is updated. |
-| `--host_reference` | path | null (required) | Path to a local GRCh38 no-alt FASTA or a pre-built minimap2 `.mmi` index. Providing a pre-built `.mmi` skips indexing and saves ~10 min per run. | Always required unless the samples contain no human DNA (e.g., cell-culture only). |
+| `--host_reference` | path | null | Path to a local GRCh38 no-alt FASTA or a pre-built minimap2 `.mmi` index. Only required with `--use_minimap2` or `--use_hostile`. Not needed for the default nohuman mode. | Provide when using `--use_minimap2` or `--use_hostile`. A pre-built `.mmi` skips indexing and saves ~10 min per run. |
 | `--outdir` | path | `results` | Output directory. Created if it does not exist. | Change to avoid overwriting a previous run. |
 
 ---
@@ -61,6 +61,7 @@ To set many parameters for a site, write a params JSON file and pass it with `-p
 | `--min_alt_bq` | integer | `7` | Minimum base quality for LoFreq alternate-allele calls. | Rarely need changing for R10.4.1 data with HAC basecalls. |
 | `--lofreq_sig` | float | `0.01` | LoFreq strand-bias significance threshold. | Lower to 0.001 if strand-biased false positives are a concern (e.g., known problematic homopolymers). |
 | `--lofreq_pp_threads` | integer | `8` | Number of LoFreq `call-parallel` workers. Values of 1 use serial `lofreq call`; the `docker_mac` profile sets this to 1. | Lower to 1 on Apple Silicon Docker or other environments where `call-parallel` is unstable. |
+| `--max_sb` | integer | `200` | Maximum strand-bias Phred score (INFO/SB). Variants above this threshold are discarded during filtering. | Raise to be more permissive; lower to remove more strand-biased calls. |
 
 ---
 
@@ -69,7 +70,7 @@ To set many parameters for a site, write a params JSON file and pass it with `-p
 | Parameter | Type | Default | Description | When to change |
 |---|---|---|---|---|
 | `--lofreq_max_depth` | integer | `5000` | rasusa depth cap for the LoFreq input BAM. LoFreq sensitivity plateaus above ~5,000×; higher depth increases false-positive rate and runtime. | Rarely need changing. Increase to 10,000 only if very deep samples show underdetection. |
-| `--devider_max_depth` | integer | `1000` | rasusa depth cap for the DEVIDER input BAM. DEVIDER memory scales super-linearly above 1,000×. | Increase for higher sensitivity in high-diversity or low-coverage samples; decrease if DEVIDER runs out of memory. |
+| `--devider_max_depth` | integer | `5000` | rasusa depth cap for the DEVIDER input BAM. | Decrease if DEVIDER runs out of memory on very deep samples. |
 | `--rasusa_seed_lofreq` | integer | `42` | Random seed for rasusa subsampling of the LoFreq input. Fixed seed ensures reproducible subsampling. | Change only if reproducibility tests reveal a seed-specific bias. |
 | `--rasusa_seed_devider` | integer | `43` | Random seed for rasusa subsampling of the DEVIDER input. | As above. |
 
@@ -79,9 +80,10 @@ To set many parameters for a site, write a params JSON file and pass it with `-p
 
 | Parameter | Type | Default | Description | When to change |
 |---|---|---|---|---|
-| `--devider_min_cov` | integer | `50` | DEVIDER `--min-cov`: minimum per-window depth required for DEVIDER to attempt reconstruction in that window. Windows below this threshold are skipped. | Decrease to recover partial haplotypes from low-coverage regions; increases noise. |
-| `--devider_min_abund` | float | `0.25` | DEVIDER `--min-abund`: minimum fractional abundance for a reconstructed haplotype to be reported (25%). | Decrease to 0.05 to recover minor haplotypes; increases the risk of chimeric haplotype artefacts. |
-| `--stitch_min_reads` | integer | `5` | Minimum number of reads spanning a window junction required for `bin/stitch_haplotypes.py` to link two adjacent DEVIDER windows into a single haplotype. | Increase for stricter stitching; decrease for lower-coverage samples where spanning reads are scarce. |
+| `--devider_min_read_length` | integer | `4000` | Minimum read length (bp) retained for DEVIDER input. Applied before rasusa subsampling so the depth cap is drawn from long reads only. | Decrease to 2000 if read length distribution is short and DEVIDER yields few haplotypes. |
+| `--devider_min_cov` | integer | `10` | DEVIDER `--min-cov`: minimum per-window depth required for DEVIDER to attempt reconstruction in that window. Windows below this threshold are skipped. | Increase for stricter reconstruction; decrease to attempt haplotypes from very low-coverage regions. |
+| `--devider_min_abund` | float | `0.25` | DEVIDER `--min-abund`: minimum haplotype abundance to report. This is a literal percent value: `0.25` means 0.25%, not 25%. | Decrease to recover minor haplotypes at higher noise risk. |
+| `--devider_min_af` | float | `0.05` | Minimum allele frequency for variants in the VCF passed to DEVIDER for phasing. Higher than `min_report_af` to prevent low-AF noise from saturating DEVIDER's graph. | Raise if DEVIDER produces fragmented haplotypes due to noisy SNPs; lower to include more variants in phasing. |
 
 ---
 
@@ -90,8 +92,11 @@ To set many parameters for a site, write a params JSON file and pass it with `-p
 | Parameter | Type | Default | Description | When to change |
 |---|---|---|---|---|
 | `--run_clair3` | boolean | `false` | Enable optional Clair3 corroboration calling (AF ≥ 25%). Adds significant runtime and disk usage. Outputs written to `variants/<GT>/clair3/`. | Enable when independent corroboration of high-AF variants is required. |
-| `--allow_conda_fallback` | boolean | `false` | Allow conda/micromamba to resolve environments when a container is unavailable. Required if Docker/Singularity is not available on the system. | Enable when running on systems without container support. Prefer the `conda` profile for a fully conda-native run. |
-| `--use_hostile` | boolean | `false` | Use the `hostile` tool instead of raw minimap2 for host depletion. `hostile` is a thin wrapper around minimap2 with additional host-database options. | Enable if a specific hostile database is preferred over GRCh38. |
+| `--allow_conda_fallback` | boolean | `false` | Allow conda/micromamba to resolve environments when a container is unavailable. | Enable when running on systems without container support. Prefer the `conda` profile for a fully conda-native run. |
+| `--skip_host_depletion` | boolean | `false` | Bypass host depletion entirely. Not recommended for clinical samples. | Enable only for cell-culture or purely viral samples. |
+| `--use_nohuman` | boolean | `false` | Explicitly select nohuman (Kraken2) host depletion. This is the default when no host depletion flag is set. | Rarely needed; the default already uses nohuman. |
+| `--use_minimap2` | boolean | `false` | Use minimap2 alignment against GRCh38 for host depletion. Requires `--host_reference` or will auto-download GRCh38. | Use when precise alignment-based depletion is preferred over Kraken2. |
+| `--use_hostile` | boolean | `false` | Use the `hostile` tool for host depletion. Requires `--host_reference`. | Use if a specific hostile database is preferred. |
 
 ---
 

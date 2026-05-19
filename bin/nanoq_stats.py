@@ -17,7 +17,6 @@ import gzip
 import json
 import math
 import statistics
-import sys
 
 
 def _phred_mean(qual: str) -> float:

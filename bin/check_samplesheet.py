@@ -88,8 +88,6 @@ def validate_samplesheet(path: str) -> list[dict]:
 
             # 2. sample_id character set
             if not VALID_ID_RE.match(sample_id):
-                invalid_chars = set(re.findall(r"[^\w.\-]", sample_id))
-                # Also catch / and \ explicitly since \w doesn't exclude them in all locales
                 problem = ", ".join(sorted(repr(c) for c in set(sample_id) - set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-")))
                 die(
                     f"Row {row_num}: 'sample_id' contains invalid characters: {problem}\n"
@@ -146,7 +144,6 @@ def print_summary(samples: list[dict]) -> None:
     """Print a human-readable table of validated samples to stderr."""
     col_id   = max(len("sample_id"), max(len(s["id"]) for s in samples))
     col_fq   = max(len("fastq"), max(len(s["fastq"]) for s in samples))
-    col_meta = len("metadata")
 
     header = f"{'sample_id':<{col_id}}  {'fastq':<{col_fq}}  {'metadata'}"
     sep    = "-" * (col_id + 2 + col_fq + 2 + 16)

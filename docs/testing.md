@@ -1,4 +1,4 @@
-# Testing and Validation Strategy — HCV Quasispecies Pipeline
+# Testing and Validation Strategy — QuIVER
 
 ## 9.1 Unit-level (per module)
 
@@ -6,7 +6,7 @@ Each module should be invokable in isolation via `nextflow run modules/local/<mo
 
 ## 9.2 Synthetic test dataset
 
-See `docs/implementation_prompts.md` Prompt 25. The dataset is deliberately small (≤500 reads per sample) so a full integration run completes in <5 min.
+The dataset is deliberately small (≤500 reads per sample) so a full integration run completes in <5 min.
 
 Expected outputs and tolerances:
 - `single_gt` sample:

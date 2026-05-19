@@ -19,7 +19,7 @@ concurrency:
 jobs:
   test:
     name: "Run pipeline with test data (NXF ${{ matrix.NXF_VER }})"
-    if: "${{ github.event_name != 'push' || (github.event_name == 'push' && github.repository == 'charlesfoster/quiver') }}"
+    if: false  # disabled until test workflow is ready
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

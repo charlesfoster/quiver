@@ -2,16 +2,14 @@
 
 Nextflow DSL2 pipeline for reproducible HCV quasispecies analysis from ONT PromethION reads: genome-wide low-frequency variant calling (LoFreq, ≥1% AF) and global haplotype reconstruction (DEVIDER), with automatic detection and per-genotype branching for mixed-genotype infections.
 
-Architecture, design decisions, and tool version rationale: [CLAUDE.md](CLAUDE.md).
-
 ---
 
 ## Quick start
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/charlesfoster/QuIVER.git
-cd QuIVER
+git clone https://github.com/charlesfoster/quiver.git
+cd quiver
 
 # 2. Print help
 nextflow run main.nf --help
@@ -114,12 +112,12 @@ Invocation examples and per-profile notes: [docs/usage.md](docs/usage.md).
 |---|---|---|
 | `--input` | required | Samplesheet CSV |
 | `--reference_panel` | `assets/hcv_references.fasta` | 238-sequence HCV reference panel |
-| `--host_reference` | required | GRCh38 FASTA or .mmi for host depletion |
+| `--host_reference` | null | GRCh38 FASTA or .mmi; only required with `--use_minimap2` or `--use_hostile` |
 | `--outdir` | `results` | Output directory |
 | `--min_secondary_fraction` | `0.05` | Read fraction threshold for mixed-infection detection |
 | `--lofreq_max_depth` | `5000` | rasusa depth cap for LoFreq |
 | `--lofreq_pp_threads` | `8` | LoFreq parallel workers; `1` uses serial `lofreq call` |
-| `--devider_max_depth` | `1000` | rasusa depth cap for DEVIDER |
+| `--devider_max_depth` | `5000` | rasusa depth cap for DEVIDER |
 | `--run_clair3` | `false` | Enable optional Clair3 corroboration |
 
 Full parameter reference with descriptions and tuning guidance: [docs/parameters.md](docs/parameters.md).
@@ -150,9 +148,9 @@ Description of every output file: [docs/output.md](docs/output.md).
 
 | Document | Contents |
 |---|---|
-| [CLAUDE.md](CLAUDE.md) | Architecture, design decisions, tool inventory |
 | [docs/usage.md](docs/usage.md) | Installation, profiles, running, troubleshooting |
 | [docs/parameters.md](docs/parameters.md) | Full parameter reference |
+| [docs/important_considerations.md](docs/important_considerations.md) | DEVIDER haplotype recovery: read length, SNP density, error rates, tuning |
 | [docs/output.md](docs/output.md) | Output file descriptions |
 | [docs/configuration.md](docs/configuration.md) | Config defaults, samplesheet schema, compute profiles |
 | [docs/data_flow.md](docs/data_flow.md) | Step-by-step data flow with exact commands |
@@ -163,4 +161,4 @@ Description of every output file: [docs/output.md](docs/output.md).
 
 ## Citation
 
-If you use this pipeline, please cite the underlying tools listed in [CLAUDE.md](CLAUDE.md) Section 4, in particular LoFreq, DEVIDER, minimap2, and Nextflow.
+If you use this pipeline, please cite the underlying tools — in particular LoFreq, DEVIDER, minimap2, and Nextflow.

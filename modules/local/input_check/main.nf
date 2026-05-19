@@ -48,6 +48,6 @@ process INPUT_CHECK {
 
     stub:
     """
-    echo '[]' > validated_samples.json
+    echo '[{"id":"single_gt","fastq":"${projectDir}/test_data/single_gt.fastq.gz","metadata":{}},{"id":"mixed_gt","fastq":"${projectDir}/test_data/mixed_gt.fastq.gz","metadata":{"note":"mixed_infection_test"}}]' > validated_samples.json
     """
 }

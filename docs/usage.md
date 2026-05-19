@@ -1,7 +1,6 @@
-# Usage — HCV Quasispecies Pipeline
+# Usage — QuIVER
 
-This document explains how to install, configure, and run `QuIVER`.
-For architecture and design decisions see [CLAUDE.md](../CLAUDE.md).
+This document explains how to install, configure, and run QuIVER.
 For parameter descriptions see [docs/parameters.md](parameters.md).
 
 ---
@@ -21,18 +20,18 @@ For parameter descriptions see [docs/parameters.md](parameters.md).
   - Singularity / Apptainer — required for `katana` and `gadi` profiles.
   - conda with micromamba ≥ 1.5 — required for `conda` profile.
 
-- **Host reference genome** (GRCh38 no-alt) for host depletion:
+- **Host depletion** — the default method (`nohuman`) uses a Kraken2-based database that is
+  downloaded automatically on first run to `~/.quiver/nohuman_db` (~4 GB, one-time).
+  No `--host_reference` is needed for this mode.
+
+  If you prefer minimap2 alignment against GRCh38, pass `--use_minimap2` and supply the reference:
 
   ```bash
-  # Download from NCBI (one-time, ~3 GB compressed):
-  wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/000/001/405/GCA_000001405.15_GRCh38/\
-  GCA_000001405.15_GRCh38_no_alt_analysis_set.fna.gz \
-    -O /reference/GRCh38.fa.gz
+  nextflow run main.nf --use_minimap2 --host_reference /path/to/GRCh38.fa.gz ...
   ```
 
-  Pass this path via `--host_reference /reference/GRCh38.fa.gz`.
-  The pipeline builds a minimap2 index on first use and caches it.
-  This is an explicit local path; the pipeline does not currently auto-download GRCh38.
+  The pipeline builds and caches a minimap2 index at `~/.quiver/references` on first use.
+  Alternatively pass a pre-built `.mmi` to skip indexing entirely.
 
 ---
 
@@ -192,7 +191,7 @@ If mean coverage after Round 2 mapping is below `params.min_mean_coverage` (defa
 
 When the fraction of reads mapping to a secondary genotype meets or exceeds `params.min_secondary_fraction` (default 5%), the pipeline sets `is_mixed = true` and branches into per-genotype sub-workflows. Each genotype produces its own consensus, variants, and haplotypes. The `genotyping/` output directory contains the full classification summary.
 
-Adjust the threshold with `--min_secondary_fraction`. Setting it below 0.05 may increase false-positive mixed calls from cross-contamination. See design decision D7 in [CLAUDE.md](../CLAUDE.md).
+Adjust the threshold with `--min_secondary_fraction`. Setting it below 0.05 may increase false-positive mixed calls from cross-contamination.
 
 ### DEVIDER fails for a sample
 

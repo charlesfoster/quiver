@@ -1,4 +1,4 @@
-# Configuration — HCV Quasispecies Pipeline
+# Configuration — QuIVER
 
 ## Parameters (`nextflow.config`)
 
@@ -9,8 +9,18 @@ params {
     // --- Inputs ---
     input               = null   // samplesheet CSV (required)
     reference_panel     = "${projectDir}/assets/hcv_references.fasta"
-    host_reference      = null   // local path to GRCh38 fasta or .mmi
+    host_reference      = null   // local path to GRCh38 fasta or .mmi (only needed with --use_minimap2 / --use_hostile)
     outdir              = "results"
+
+    // --- Host depletion ---
+    // Specify at most one of use_nohuman / use_hostile / use_minimap2.
+    // Default (none specified): nohuman (Kraken2-based, auto-downloads ~4 GB DB to ~/.quiver/nohuman_db)
+    skip_host_depletion       = false
+    use_nohuman               = false   // explicit nohuman flag (redundant with default)
+    use_hostile               = false   // hostile wrapper; requires --host_reference
+    use_minimap2              = false   // minimap2 vs GRCh38; auto-downloads if --host_reference not set
+    nohuman_db                = "${HOME}/.quiver/nohuman_db"
+    host_genome_cache         = "${HOME}/.quiver/references"
 
     // --- Read filtering ---
     min_length          = 200
@@ -35,6 +45,7 @@ params {
     min_alt_bq              = 7
     lofreq_sig              = 0.01
     lofreq_pp_threads       = 8
+    max_sb                  = 200    // maximum strand-bias Phred score
 
     // --- Depth normalisation ---
     lofreq_max_depth        = 5000
@@ -43,14 +54,14 @@ params {
     rasusa_seed_devider     = 43
 
     // --- Haplotype ---
-    devider_min_cov         = 20      // DEVIDER --min-cov (haplotype depth floor)
-    devider_min_abund       = 0.25    // DEVIDER --min-abund (% abundance floor)
-    stitch_min_reads        = 5       // post-hoc stitcher minimum spanning reads
+    devider_min_read_length = 4000   // minimum read length fed to DEVIDER
+    devider_min_cov         = 10     // DEVIDER --min-cov (haplotype depth floor)
+    devider_min_abund       = 0.25   // DEVIDER --min-abund (% abundance floor, literal percent)
+    devider_min_af          = 0.05   // AF threshold for VCF passed to DEVIDER
 
     // --- Run-mode toggles ---
     run_clair3              = false
     allow_conda_fallback    = false
-    use_hostile             = false
 
     // --- Resources (overridable per-profile) ---
     max_cpus                = 16

@@ -1,4 +1,4 @@
-# Output — HCV Quasispecies Pipeline
+# Output — QuIVER
 
 All outputs are written under `--outdir` (default `results/`).
 Per-sample outputs are nested under `results/<sample_id>/`.
@@ -86,8 +86,9 @@ Haplotype reconstruction outputs from DEVIDER and post-hoc stitching.
 |---|---|---|---|
 | `devider/` | directory | Raw DEVIDER output directory; contents vary by DEVIDER version and windowing. Parse by directory listing, not hard-coded filenames | `LOW_COVERAGE` flag (mean < `min_mean_coverage`); DEVIDER build failure |
 | `devider.failed` | marker | Empty file indicating DEVIDER exited non-zero. The pipeline continues; downstream steps emit partial results | Absent when DEVIDER succeeded |
-| `merged_haplotypes.fasta` | FASTA | Post-hoc stitched haplotypes. Each sequence is a reconstructed haplotype spanning as many windows as spanning-read evidence supports | `LOW_COVERAGE`; DEVIDER failed; no windows produced by DEVIDER |
-| `stitching_report.json` | JSON | Per-window stitching summary: window coordinates, haplotype count, spanning reads used, link status | As above |
+| `<sample_id>_<GT>_haplotypes.fasta` | FASTA | Haplotypes sorted by abundance (highest first) with annotated headers: `>ID abund:<pct> depth:<x> length:<bp>` | `LOW_COVERAGE`; DEVIDER failed; no haplotypes produced |
+| `<sample_id>_<GT>_haplotype_map.tsv` | TSV | Maps clean sequential haplotype IDs back to DEVIDER's original headers | As above |
+| `<sample_id>_<GT>_haplotype_report.json` | JSON | Per-haplotype summary: abundance, depth, length, and fallback flag if DEVIDER failed | As above |
 
 ---
 

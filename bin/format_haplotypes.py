@@ -542,9 +542,6 @@ def assemble_chains(
         (h.window_index, h.hap_index): h for h in haplotypes
     }
 
-    # Index junctions by upstream window.
-    junctions_by_upstream: dict[int, Junction] = {j.upstream_window: j for j in junctions}
-
     # Build adjacency: for each (window, hap), the list of supported downstream haps.
     next_haps: dict[tuple[int, int], list[tuple[int, int, int]]] = defaultdict(list)
     # value tuples: (next_hap_index, link_reads, total_spanning_at_junction)

@@ -1,4 +1,4 @@
-# Known Limitations and Future Work — HCV Quasispecies Pipeline
+# Known Limitations and Future Work — QuIVER
 
 1. **Genotype determination by best-hit only.** Recombinants assigned to a single genotype; intra-host recombination not explicitly detected. Future: RDP4-style breakpoint analysis on assembled haplotypes.
 
@@ -10,7 +10,7 @@
 
 5. **Host depletion uses one human reference.** Non-human, non-viral reads pass through. Acceptable for sterile clinical samples. Future: optional multi-host depletion.
 
-6. **No automatic host-reference download or persistent index store.** The HCV reference panel is bundled, but `--host_reference` must be a local GRCh38 FASTA or pre-built `.mmi` minimap2 index. FASTA inputs are indexed inside Nextflow work directories and are only reused with `-resume`; passing a persistent `.mmi` is currently the fastest repeat-run path. Future: add nf-core-style host-reference auto-download plus a `storeDir`-backed minimap2 index cache.
+6. **minimap2 host depletion requires a local reference.** The default nohuman mode auto-downloads its Kraken2 database, but `--use_minimap2` requires a local GRCh38 FASTA or pre-built `.mmi`. Passing a persistent `.mmi` is the fastest repeat-run path with minimap2. Future: add fully automatic GRCh38 download with a `storeDir`-backed index cache.
 
 7. **DEVIDER haplotype stitching is heuristic.** Hamming-distance support thresholds; not probabilistic. Future: probabilistic stitcher modelling sequencing error.
 

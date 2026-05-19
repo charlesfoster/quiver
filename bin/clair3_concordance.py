@@ -8,7 +8,6 @@ Clair3 is used as corroboration at AF >= 25% only.
 import argparse
 import gzip
 import sys
-from collections import defaultdict
 
 
 def parse_vcf(vcf_path, min_af=0.0):

@@ -1,4 +1,4 @@
-# Data Flow Specification — HCV Quasispecies Pipeline
+# Data Flow Specification — QuIVER
 
 > Notation: `$SID` = sample_id, `$GT` = genotype label (e.g., `1a`, `2b`; per-branch outputs always use a single subtype).
 
@@ -226,10 +226,10 @@
 - **Resources:** 16 CPU, 64 GB, 4 hours (worst case).
 - **Fail (graceful):** Non-zero exit → emit empty dir + `devider.failed`; do not fail the sample.
 
-## Step 5.20 — Haplotype stitching
-- **Module:** `STITCH_HAPLOTYPES` (`bin/stitch_haplotypes.py`)
-- **Output:** `haplotypes/${GT}/merged_haplotypes.fasta`, `stitching_report.json`
-- **Logic:** Walk DEVIDER haplotype regions in order. For each adjacent pair, find reads in the haplotype-tagged BAM that span the junction. Link if ≥ `params.stitch_min_reads` reads support a specific haplotype-X → haplotype-Y concatenation (Hamming distance over SNV positions). Emit separately where no spanning reads exist.
+## Step 5.20 — Haplotype formatting
+- **Module:** `FORMAT_HAPLOTYPES` (`bin/format_haplotypes.py`)
+- **Output:** `haplotypes/${GT}/<sid>_<GT>_haplotypes.fasta`, `<sid>_<GT>_haplotype_map.tsv`, `<sid>_<GT>_haplotype_report.json`
+- **Logic:** Sort DEVIDER haplotypes by abundance (highest first), assign clean sequential IDs, annotate FASTA headers with abundance/depth/length, and write a TSV mapping new IDs back to DEVIDER's original headers. Gracefully handles DEVIDER failure by emitting empty outputs.
 - **Resources:** 4 CPU, 8 GB, 30 min.
 
 ## Step 5.21 — Per-sample report
