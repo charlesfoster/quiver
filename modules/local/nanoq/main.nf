@@ -21,8 +21,8 @@ process NANOQ {
     tag "${meta.id}"
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'docker://python:3.11-slim' :
-        'python:3.11-slim' }"
+        'docker://python:3.11' :
+        'python:3.11' }"
     conda "${moduleDir}/environment.yml"
 
     publishDir (

@@ -28,9 +28,8 @@
         the flag name and renders colour-coded badges.
 
     Container:
-        python:3.11-slim with Jinja2 installed at runtime.  Jinja2 is the only
-        non-stdlib dependency; the install takes ~5 seconds and is cached by
-        Docker layer caching after the first pull.
+        python:3.11 (full image — required for Nextflow ps-monitoring under Docker/WSL).
+        Jinja2 is the only non-stdlib dependency; installed at runtime.
 
     Label: process_low (1 CPU, 2 GB, 5 min — Step 5.21 resource spec).
 
@@ -68,8 +67,8 @@ process SAMPLE_REPORT {
 
     tag "${meta.id}"
 
-    // python:3.11-slim is the canonical container for all custom Python scripts
-    // in this pipeline (CLAUDE.md Section 4).  Jinja2 is installed at runtime.
+    // python:3.11 (full image) — slim lacks procps/ps which Nextflow requires
+    // for process monitoring under Docker and WSL. Jinja2 is installed at runtime.
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
         'docker://python:3.11' :
         'python:3.11' }"
