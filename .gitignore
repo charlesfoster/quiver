@@ -29,6 +29,7 @@ pixi.lock
 CLAUDE.md
 docs/architecture_reasoning.md
 docs/implementation_prompts.md
+docs/codex_changes.md
 .claude/agents/
 design_prompt.md
 

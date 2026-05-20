@@ -95,6 +95,8 @@ def extract_sample_row(data: dict) -> dict:
     primary_gt = data.get("primary_genotype")
     is_mixed = data.get("is_mixed", False)
     flags = [f["name"] for f in data.get("flags", [])]
+    detected_subtypes: list[str] = data.get("detected_subtypes", [])
+    primary_subtype: str | None = data.get("primary_subtype")
 
     # Aggregate coverage across branches
     cov_values: list[float] = []
@@ -123,6 +125,8 @@ def extract_sample_row(data: dict) -> dict:
         "sample_id":               sid,
         "status":                  status,
         "primary_genotype":        primary_gt,
+        "primary_subtype":         primary_subtype,
+        "detected_subtypes":       detected_subtypes,
         "is_mixed":                is_mixed,
         "mean_coverage":           mean_cov,
         "variants_called":         total_variants if total_variants > 0 else None,
@@ -385,7 +389,7 @@ details.params-details > summary:hover {{ text-decoration: underline; }}
           <th>#</th>
           <th>Sample ID</th>
           <th>Status</th>
-          <th>Primary Genotype</th>
+          <th>Subtype(s)</th>
           <th>Mixed?</th>
           <th>Mean Coverage</th>
           <th>Variants Called</th>
@@ -515,9 +519,15 @@ def _build_table_rows(rows: list[dict], sample_order: list[str] | None = None) -
         hap_html    = (str(r["haplotypes_reconstructed"])
                        if r["haplotypes_reconstructed"] is not None
                        else '<span class="na">n/a</span>')
-        gt_html     = (r["primary_genotype"]
-                       if r["primary_genotype"]
-                       else '<span class="na">n/a</span>')
+        subtypes = r.get("detected_subtypes") or []
+        if subtypes:
+            gt_html = ", ".join(subtypes)
+        elif r.get("primary_subtype"):
+            gt_html = r["primary_subtype"]
+        elif r["primary_genotype"]:
+            gt_html = r["primary_genotype"]
+        else:
+            gt_html = '<span class="na">n/a</span>'
         flags_html  = (", ".join(r["flags"])
                        if r["flags"]
                        else '<span class="na">none</span>')

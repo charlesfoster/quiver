@@ -104,11 +104,29 @@ def validate_samplesheet(path: str) -> list[dict]:
             if not fastq_raw:
                 die(f"Row {row_num} (sample '{sample_id}'): 'fastq' path is empty.")
 
-            fastq_path = os.path.abspath(fastq_raw)
+            # Follow the symlink Nextflow creates in the work dir to find the
+            # samplesheet's real location, so relative FASTQ paths resolve correctly.
+            samplesheet_dir = os.path.dirname(os.path.realpath(path))
+            fastq_path = (
+                fastq_raw if os.path.isabs(fastq_raw)
+                else os.path.abspath(os.path.join(samplesheet_dir, fastq_raw))
+            )
 
-            # File existence / readability is intentionally NOT checked here.
-            # This script runs inside a container where host paths are not mounted;
-            # Nextflow's checkIfExists: true on the channel handles that on the host.
+            # Best-effort existence check. Works for local/conda runs; for container
+            # runs where host paths are not mounted, Nextflow's checkIfExists: true
+            # is the fallback — but this gives a far clearer error when it can check.
+            if not os.path.isfile(fastq_path):
+                origin = (
+                    "absolute path as written"
+                    if os.path.isabs(fastq_raw)
+                    else f"relative path '{fastq_raw}', resolved against samplesheet directory '{samplesheet_dir}'"
+                )
+                die(
+                    f"Row {row_num} (sample '{sample_id}'): FASTQ file not found.\n"
+                    f"  Resolved path : {fastq_path}\n"
+                    f"  Interpreted as: {origin}\n"
+                    f"  Use an absolute path or a path relative to the samplesheet's own directory."
+                )
 
             # 5. Parse optional metadata JSON (if provided)
             metadata: dict = {}

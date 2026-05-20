@@ -1,6 +1,14 @@
 # QuIVER
 
-Nextflow DSL2 pipeline for reproducible HCV quasispecies analysis from ONT PromethION reads: genome-wide low-frequency variant calling (LoFreq, ≥1% AF) and global haplotype reconstruction (DEVIDER), with automatic detection and per-genotype branching for mixed-genotype infections.
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/quiver_logo.png">
+    <img alt="charlesfoster/quiver" src="docs/images/quiver_logo.png">
+  </picture>
+</h1>
+
+
+Nextflow DSL2 pipeline for reproducible HCV quasispecies analysis from ONT long reads: genome-wide low-frequency variant calling (LoFreq, ≥1% AF) and global haplotype reconstruction (DEVIDER), with automatic detection and per-genotype branching for mixed-genotype infections.
 
 ---
 
@@ -30,7 +38,6 @@ nextflow run main.nf -profile test --outdir results/test
 | conda or mamba | any recent | Required for `-profile conda` |
 
 Disk: allow approximately 3× the size of your input FASTQ files for intermediate BAMs plus final outputs.
-The DEVIDER container is the only custom-built image; all other tools use public biocontainers images.
 
 ---
 
@@ -120,6 +127,8 @@ Invocation examples and per-profile notes: [docs/usage.md](docs/usage.md).
 | `--devider_max_depth` | `5000` | rasusa depth cap for DEVIDER |
 | `--run_clair3` | `false` | Enable optional Clair3 corroboration |
 
+Note: `lofreq call-parallel` is capped at 8 threads irrespective of what the user sets to avoid a known bug.
+
 Full parameter reference with descriptions and tuning guidance: [docs/parameters.md](docs/parameters.md).
 
 ---
@@ -136,6 +145,7 @@ results/
     variants/<GT>/
     haplotypes/<GT>/
     reports/
+    reads/
   pipeline_info/
   reports/
 ```

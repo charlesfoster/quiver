@@ -25,3 +25,7 @@
 12. **LoFreq strand-bias filter was Illumina-tuned.** ONT R10.4.1 produces both strands reliably but with subtly different error profiles. Mitigated by lowering `--min-bq` and adding indel qualities with `lofreq indelqual`; advanced users may wish to re-tune `--sig` and the strand-bias filter.
 
 13. **No real-time monitoring.** Pipeline is batch only. Future: Epi2Me-style streaming variant.
+
+14. **Mixed-genotype test data is synthetic.** The current `mixed_gt` test case uses small synthetic reads and does not reflect the read depth or complexity of a real mixed-genotype clinical sample. Future: replace with simulation-derived reads spanning two or more major genotypes at clinically relevant proportions.
+
+15. **Within-genotype subtype co-infections (e.g. 1a/1b) are not separately analysed.** The pipeline branches at the major-genotype level (1, 2, 3…), so genotype-1a and genotype-1b reads are merged into a single "genotype 1" branch. The dominant subtype is recorded in `top_subtype` but the minority subtype receives no independent variant calling or haplotype reconstruction. Future: add subtype-level branching to handle 1a/1b co-infections, with per-subtype output directories (e.g. `mapping/1a/`, `mapping/1b/`) and separate variant and haplotype outputs for each.

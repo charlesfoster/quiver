@@ -1,17 +1,18 @@
 {
   "sample_id": "single_gt",
   "is_mixed": false,
-  "primary_genotype": "1a",
+  "primary_genotype": "1",
+  "primary_subtype": "1a",
   "branches_to_run": [
-    "1a"
+    "1"
   ],
   "_tolerances": {
     "total_mapped_reads": {
-      "min": 150,
-      "max": 250
+      "min": 450,
+      "max": 750
     },
     "genotypes[0].fraction": {
-      "min": 0.9,
+      "min": 0.95,
       "max": 1.0
     }
   }

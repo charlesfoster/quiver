@@ -495,6 +495,18 @@ def build_context(args: argparse.Namespace) -> dict:
     is_mixed        = gt_summary.get("is_mixed", False)
     primary_genotype = gt_summary.get("primary_genotype")
 
+    # Build a genotype → top_subtype lookup from the per-genotype entries.
+    subtype_by_gt: dict[str, str] = {
+        entry["genotype"]: entry.get("top_subtype", entry["genotype"])
+        for entry in gt_summary.get("genotypes", [])
+        if "genotype" in entry
+    }
+    primary_subtype = subtype_by_gt.get(primary_genotype) if primary_genotype else None
+    detected_subtypes: list[str] = [
+        subtype_by_gt.get(gt, gt)
+        for gt in gt_summary.get("branches_to_run", [])
+    ]
+
     # ---- Flags ----
     raw_flags: list[str] = []
     if args.flags:
@@ -604,6 +616,7 @@ def build_context(args: argparse.Namespace) -> dict:
 
         branches.append({
             "genotype":       gt,
+            "top_subtype":    subtype_by_gt.get(gt, gt),
             "coverage":       mosdepth_data,
             "coverage_mean":  coverage_mean,
             "variants":       variant_data,
@@ -634,18 +647,20 @@ def build_context(args: argparse.Namespace) -> dict:
             print(f"WARNING: Cannot parse --run-info {args.run_info}: {exc}", file=sys.stderr)
 
     context = {
-        "sample_id":        sample_id,
-        "run_date":         run_date,
-        "pipeline_version": pipeline_version,
-        "overall_status":   overall_status,
-        "is_mixed":         is_mixed,
-        "primary_genotype": primary_genotype,
-        "genotype_summary": gt_summary,
-        "funnel":           funnel,
-        "branches":         branches,
-        "nanoplot_images":  nanoplot_images,
-        "flags":            flags,
-        "run_info":         run_info,
+        "sample_id":         sample_id,
+        "run_date":          run_date,
+        "pipeline_version":  pipeline_version,
+        "overall_status":    overall_status,
+        "is_mixed":          is_mixed,
+        "primary_genotype":  primary_genotype,
+        "primary_subtype":   primary_subtype,
+        "detected_subtypes": detected_subtypes,
+        "genotype_summary":  gt_summary,
+        "funnel":            funnel,
+        "branches":          branches,
+        "nanoplot_images":   nanoplot_images,
+        "flags":             flags,
+        "run_info":          run_info,
     }
     return context
 
@@ -683,6 +698,7 @@ def build_json_summary(context: dict) -> dict:
 
         branches_json.append({
             "genotype":        b["genotype"],
+            "top_subtype":     b.get("top_subtype"),
             "coverage_mean":   b.get("coverage_mean"),
             "coverage":        cov_out,
             "variant_count":   b.get("variant_count"),
@@ -692,17 +708,19 @@ def build_json_summary(context: dict) -> dict:
         })
 
     return {
-        "sample_id":        context["sample_id"],
-        "run_date":         context["run_date"],
-        "pipeline_version": context["pipeline_version"],
-        "overall_status":   context["overall_status"],
-        "is_mixed":         context["is_mixed"],
-        "primary_genotype": context["primary_genotype"],
-        "genotype_summary": context["genotype_summary"],
-        "funnel":           context["funnel"],
-        "branches":         branches_json,
-        "flags":            context["flags"],
-        "run_info":         context.get("run_info"),
+        "sample_id":         context["sample_id"],
+        "run_date":          context["run_date"],
+        "pipeline_version":  context["pipeline_version"],
+        "overall_status":    context["overall_status"],
+        "is_mixed":          context["is_mixed"],
+        "primary_genotype":  context["primary_genotype"],
+        "primary_subtype":   context.get("primary_subtype"),
+        "detected_subtypes": context.get("detected_subtypes", []),
+        "genotype_summary":  context["genotype_summary"],
+        "funnel":            context["funnel"],
+        "branches":          branches_json,
+        "flags":             context["flags"],
+        "run_info":          context.get("run_info"),
     }
 
 

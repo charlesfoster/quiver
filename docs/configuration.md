@@ -78,7 +78,10 @@ P001,/path/to/P001.fastq.gz,
 P002,/path/to/P002.fastq.gz,{"collection_date":"2026-01-15"}
 ```
 
-Constraints: `sample_id` must match `^[A-Za-z0-9._-]+$`; must be unique; FASTQ must be readable.
+Constraints: `sample_id` must match `^[A-Za-z0-9._-]+$`; must be unique. `fastq` accepts an
+absolute path or a path relative to the samplesheet's own directory — absolute paths are
+recommended for general use. The pipeline will emit a clear error with the resolved path if
+a file cannot be found.
 
 ## `genotype_summary.json` schema (Step 5.8 output)
 

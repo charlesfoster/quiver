@@ -1,17 +1,16 @@
 #!/usr/bin/env python3
 """
-generate_test_data.py — Deterministic synthetic test data generator for QuIVER.
+generate_test_data.py — Generates test_data/mini_host.fasta and the samplesheet.
 
-Run once to create all files under test_data/:
+NOTE: This script no longer owns the FASTQ test data.
+  single_gt.fastq.gz — copied from quasispecies_simulations (sim_data/1a/C/C_500x_r1/rep1)
+  mixed_gt.fastq.gz  — regenerate with: python3 tests/generate_mixed_gt.py
+
+Run to regenerate the host reference and samplesheet:
     python3 tests/generate_test_data.py --output-dir test_data/
 
 Seeds used:
-    42  — HCV 1a reference sequence generation
-    43  — HCV 2b reference (mutate 25% of 1a positions)
-    44  — HCV 3a reference (mutate 25% of 1a positions with different pattern)
     45  — Human host synthetic sequence (40% GC)
-   100  — single_gt sample reads (1a + host)
-   200  — mixed_gt sample reads (1a + 3a + host)
 """
 
 import argparse

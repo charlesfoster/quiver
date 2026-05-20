@@ -1,19 +1,20 @@
 {
   "sample_id": "mixed_gt",
   "is_mixed": true,
-  "primary_genotype": "1a",
+  "primary_genotype": "1",
+  "primary_subtype": "1a",
   "_tolerances": {
     "total_mapped_reads": {
-      "min": 200,
-      "max": 400
+      "min": 600,
+      "max": 900
     },
     "genotypes[0].fraction": {
-      "min": 0.55,
-      "max": 0.85
+      "min": 0.50,
+      "max": 0.70
     },
     "genotypes[1].fraction": {
-      "min": 0.15,
-      "max": 0.45
+      "min": 0.30,
+      "max": 0.50
     }
   }
 }

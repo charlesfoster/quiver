@@ -123,7 +123,9 @@ P002,/absolute/path/to/P002.fastq.gz,{"collection_date":"2026-01-15"}
 ```
 
 - `sample_id` must match `^[A-Za-z0-9._-]+$` and be unique within the file.
-- `fastq` must be an absolute path to a readable gzip-compressed FASTQ file.
+- `fastq` — absolute path, or a path relative to the **samplesheet's own directory**
+  (e.g., `reads/P001.fastq.gz` if the samplesheet is next to a `reads/` folder).
+  Absolute paths are recommended for general use to avoid ambiguity.
 - `metadata_json` is optional; omit or leave blank.
 
 Full schema: [docs/configuration.md](configuration.md).
