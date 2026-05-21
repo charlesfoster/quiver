@@ -28,8 +28,9 @@
         the flag name and renders colour-coded badges.
 
     Container:
-        python:3.11 (full image — required for Nextflow ps-monitoring under Docker/WSL).
-        Jinja2 is the only non-stdlib dependency; installed at runtime.
+        quay.io/biocontainers/multiqc:1.25.1--pyhdfd78af_0 — reuses the MultiQC
+        container, which ships Jinja2 as a dependency and includes procps/ps
+        required by Nextflow process monitoring under Docker/WSL.
 
     Label: process_low (1 CPU, 2 GB, 5 min — Step 5.21 resource spec).
 
@@ -67,11 +68,11 @@ process SAMPLE_REPORT {
 
     tag "${meta.id}"
 
-    // python:3.11 (full image) — slim lacks procps/ps which Nextflow requires
-    // for process monitoring under Docker and WSL. Jinja2 is installed at runtime.
+    // MultiQC container — has Jinja2 pre-installed (MultiQC depends on it)
+    // and includes procps/ps required by Nextflow process monitoring.
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'docker://python:3.11' :
-        'python:3.11' }"
+        'docker://quay.io/biocontainers/multiqc:1.25.1--pyhdfd78af_0' :
+        'quay.io/biocontainers/multiqc:1.25.1--pyhdfd78af_0' }"
     conda "${moduleDir}/environment.yml"
 
     publishDir (
@@ -125,11 +126,6 @@ process SAMPLE_REPORT {
     // filenames in the work directory.  We pass them as-is; the Python script
     // iterates them with nargs="*".
     """
-    # ----------------------------------------------------------------
-    # Install Jinja2 and write run_info.json for reproducibility section.
-    # ----------------------------------------------------------------
-    pip install --quiet jinja2 2>/dev/null
-
     python3 -c "import base64,json; open('run_info.json','w').write(json.dumps(json.loads(base64.b64decode('${_ri_b64}')),indent=2))"
 
     # ----------------------------------------------------------------

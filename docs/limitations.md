@@ -22,6 +22,24 @@
 
 11. **ARM64 Mac production runs slower than x86 HPC** due to Rosetta translation. Native arm64 builds for DEVIDER and x86-only biocontainers would be needed. Conda-via-pixi local profile is the recommended escape hatch.
 
+16. **Docker Desktop on macOS cannot access files inside `~/Documents`, `~/Desktop`, or `~/Downloads` without Full Disk Access.** macOS enforces TCC (Transparency, Consent, and Control) privacy restrictions on these folders. Docker Desktop's VirtioFS layer propagates those restrictions into containers — files under `Documents` are visible in directory listings but fail with `Operation not permitted` when accessed (`stat`, `open`, `cp`). This also causes a secondary failure during container init if the Nextflow work directory is itself inside `Documents`:
+
+    ```
+    runc create failed: error during container init: mkdir /Users/<you>/Documents: file exists
+    ```
+
+    **Root fix — grant Docker Desktop Full Disk Access:**
+
+    > System Settings → Privacy & Security → Full Disk Access → `+` → add `/Applications/Docker.app` → restart Docker Desktop.
+
+    This is required whenever the pipeline directory, input data, or assets live inside a TCC-protected folder. After granting access, all Docker-based profiles work normally.
+
+    **Workaround (if you cannot grant Full Disk Access):** keep the pipeline and all input data outside `~/Documents`, `~/Desktop`, and `~/Downloads` (e.g. directly in `~/H2Seq/`), and always set the Nextflow work directory outside those folders:
+
+    ```sh
+    export NXF_WORK="$HOME/nf-work"
+    ```
+
 12. **LoFreq strand-bias filter was Illumina-tuned.** ONT R10.4.1 produces both strands reliably but with subtly different error profiles. Mitigated by lowering `--min-bq` and adding indel qualities with `lofreq indelqual`; advanced users may wish to re-tune `--sig` and the strand-bias filter.
 
 13. **No real-time monitoring.** Pipeline is batch only. Future: Epi2Me-style streaming variant.

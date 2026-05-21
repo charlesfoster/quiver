@@ -158,7 +158,7 @@ process RENDER_RUN_SUMMARY {
 
     tag 'run_summary'
 
-    container 'python:3.11'
+    container 'quay.io/biocontainers/multiqc:1.25.1--pyhdfd78af_0'
     conda 'conda-forge::python=3.11 conda-forge::jinja2'
 
     publishDir (
@@ -194,8 +194,6 @@ process RENDER_RUN_SUMMARY {
         sample_order    : _sample_order,
     ]).bytes.encodeBase64().toString()
     """
-    pip install --quiet jinja2 2>/dev/null
-
     python3 -c "import base64,json; open('run_info.json','w').write(json.dumps(json.loads(base64.b64decode('${_ri_b64}')),indent=2))"
 
     python3 ${projectDir}/bin/render_run_summary.py \\
