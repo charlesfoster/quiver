@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-classify_genotype.py — HCV genotype classification with mixed-infection detection.
+classify_genotype.py — HCV subtype classification with mixed-infection detection.
 
 Reads Round 1 BAM (competitive minimap2 mapping against the HCV reference panel)
 and emits:
@@ -17,13 +17,17 @@ and emits:
              "ambiguous_reads":    <int>,
              "ambiguous_fraction": <float>,
              "genotypes": [
-               {"genotype": <str>, "fraction": <float>, "reads": <int>,
-                "top_subtype": <str>, "top_reference": <str>}, ...
+               {"genotype": <str>,       # subtype label, e.g. "1a", "3a", "6xj"
+                "major_genotype": <str>, # major genotype digit(s), e.g. "1", "6"
+                "fraction": <float>,
+                "reads": <int>,
+                "top_subtype": <str>,    # same as "genotype" field (kept for compat)
+                "top_reference": <str>}, ...
              ],
              "is_mixed":             <bool>,
-             "primary_genotype":     <str | null>,
-             "secondary_genotypes":  [<str>, ...],
-             "branches_to_run":      [<str>, ...]
+             "primary_genotype":     <str | null>,   # subtype of primary branch
+             "secondary_genotypes":  [<str>, ...],   # subtypes of secondary branches
+             "branches_to_run":      [<str>, ...]    # subtypes to process downstream
            }
 
 Algorithm (see docs/data_flow.md Step 5.8 and
@@ -34,14 +38,15 @@ docs/architecture_reasoning.md Section 5):
      extract major genotype as the leading digits of that subtype.
   3. Flag a read as ambiguous if both AS and XS tags are present and the gap
      between them is below `--ambiguous-delta-as`.  Ambiguous reads are
-     counted separately and excluded from the genotype fraction computation
+     counted separately and excluded from the subtype fraction computation
      (assigning them to either subtype would bias counts).
-  4. Compute per-genotype reads / fractions, identify the primary genotype,
-     and flag any non-primary genotype with fraction >= `--min-secondary-fraction`
+  4. Compute per-subtype reads / fractions, identify the primary subtype,
+     and flag any non-primary subtype with fraction >= `--min-secondary-fraction`
      as a secondary genotype.  `branches_to_run` is the ordered list of
-     genotype branches the downstream workflow should expand.
-  5. Within the primary genotype, if any non-dominant subtype has >= 20% of
-     that genotype's reads, attach an informational `subtype_mixed_note`.
+     subtype branches the downstream workflow should expand.  Each subtype
+     becomes its own independent processing branch — including subtypes within
+     the same major genotype (e.g. 1a + 1b each get their own consensus,
+     variant calls, and haplotypes).
 
 Edge cases:
   * Zero primary mapped reads in the BAM    -> exit non-zero with clear error.
@@ -50,9 +55,10 @@ Edge cases:
   * No XS tags present (single-reference-like panel)  -> skip ambiguous detection
     gracefully; log an informational note.
   * Reference whose header does not match the regex    -> reads counted toward
-    `total_mapped_reads` but excluded from any genotype assignment; warning logged.
-  * Ties in primary genotype                -> deterministic break: numerically
-    lowest genotype label wins.  Warning logged.
+    `total_mapped_reads` but excluded from any subtype assignment; warning logged.
+  * Ties in primary subtype                -> deterministic break: numerically
+    lowest major genotype wins, then alphabetically earliest subtype letter.
+    Warning logged.
 
 Usage:
     classify_genotype.py \\
@@ -77,8 +83,10 @@ import pysam
 
 
 # Regex matching the HCV panel header prefix.
-# Group 1 = subtype token (e.g. "1a", "2b", "6xj", "1"); the major genotype is
+# Group 1 = subtype token (e.g. "1a", "2b", "6xj"); the major genotype is
 # the leading digit run of that token.
+# The panel FASTA (assets/hcv_references.fasta) contains only named-subtype
+# sequences — unsubtyped bare-major-genotype references have been removed.
 SUBTYPE_RE = re.compile(r"^([0-9]+[a-z]?[a-z]?)_")
 
 
@@ -93,16 +101,14 @@ def log(msg: str) -> None:
 
 def parse_subtype(ref_name: str) -> Optional[tuple[str, str]]:
     """
-    Parse (genotype, subtype) from a panel reference name.
+    Parse (major_genotype, subtype) from a panel reference name.
 
-    Returns (genotype, subtype) on match, or None if the header does not
+    Returns (major_genotype, subtype) on match, or None if the header does not
     follow the expected `<digits>[<letter>[<letter>]]_<accession>` convention.
 
     Examples:
         '1a_M62321.1'    -> ('1', '1a')
         '6xj_EF589068.1' -> ('6', '6xj')
-        '1_AJ238799.1'   -> ('1', '1')
-        '4g?_JX227963.1' -> None   (the literal '?' breaks the regex)
     """
     m = SUBTYPE_RE.match(ref_name)
     if not m:
@@ -122,6 +128,20 @@ def get_tag_or_none(read: pysam.AlignedSegment, tag: str) -> Optional[int]:
         return None
 
 
+def _subtype_sort_key(item: tuple[str, int]) -> tuple[int, str, int, str]:
+    """
+    Deterministic sort key for (subtype, read_count) pairs.
+
+    Primary: read count descending.
+    Tie-break: major genotype integer ascending, then full subtype string
+    ascending (so "1a" beats "1b" beats "2a" etc.).
+    """
+    st, n = item
+    major = re.match(r"^(\d+)", st)
+    major_int = int(major.group(1)) if major else 999
+    return (-n, major_int, st)
+
+
 # --------------------------------------------------------------------------- #
 # Main classification routine                                                 #
 # --------------------------------------------------------------------------- #
@@ -134,25 +154,24 @@ def classify(
     out_tsv: str,
     out_json: str,
 ) -> None:
-    """Classify reads in *bam_path* and write the TSV + JSON outputs."""
+    """Classify reads in *bam_path* by subtype and write the TSV + JSON outputs."""
 
     # ------------------------------------------------------------------ #
     # Per-read records (also written verbatim to the TSV)                #
     # ------------------------------------------------------------------ #
-    # Tally counters keyed by (genotype, subtype, reference)
-    geno_counter: Counter[str] = Counter()                       # reads per genotype
-    subtype_by_geno: dict[str, Counter[str]] = defaultdict(Counter)
-    ref_by_geno_subtype: dict[tuple[str, str], Counter[str]] = defaultdict(Counter)
+    # Tally counters keyed by subtype (e.g. "1a", "3a", "6xj").
+    subtype_counter: Counter[str] = Counter()
+    ref_by_subtype: dict[str, Counter[str]] = defaultdict(Counter)
 
-    total_primary = 0          # primary, mapped, non-empty references
+    total_primary = 0           # primary, mapped, non-empty references
     ambiguous_reads = 0
-    unmatched_header_reads = 0 # primary reads whose reference header could not be parsed
-    xs_seen = False            # for the "no XS tags" diagnostic
+    unmatched_header_reads = 0  # primary reads whose reference header could not be parsed
+    xs_seen = False             # for the "no XS tags" diagnostic
 
     with pysam.AlignmentFile(bam_path, "rb") as bam, \
          open(out_tsv, "w") as tsv_fh:
 
-        # TSV header
+        # TSV header — kept identical to prior schema for downstream compat.
         tsv_fh.write(
             "read_name\treference\tsubtype\tgenotype\tAS\tXS\tis_ambiguous\n"
         )
@@ -181,8 +200,6 @@ def classify(
 
             parsed = parse_subtype(ref_name)
             if parsed is None:
-                # Header doesn't match — count it as unmatched but still
-                # contributes to total_primary so the user can see the share.
                 unmatched_header_reads += 1
                 tsv_fh.write(
                     f"{read.query_name}\t{ref_name}\tNA\tNA\t"
@@ -192,10 +209,10 @@ def classify(
                 )
                 continue
 
-            genotype, subtype = parsed
+            major_genotype, subtype = parsed
 
             tsv_fh.write(
-                f"{read.query_name}\t{ref_name}\t{subtype}\t{genotype}\t"
+                f"{read.query_name}\t{ref_name}\t{subtype}\t{major_genotype}\t"
                 f"{as_val if as_val is not None else 'NA'}\t"
                 f"{xs_val if xs_val is not None else 'NA'}\t"
                 f"{is_ambiguous}\n"
@@ -205,10 +222,9 @@ def classify(
                 ambiguous_reads += 1
                 continue
 
-            # Assign read to its best-hit genotype/subtype/reference.
-            geno_counter[genotype] += 1
-            subtype_by_geno[genotype][subtype] += 1
-            ref_by_geno_subtype[(genotype, subtype)][ref_name] += 1
+            # Assign read to its best-hit subtype.
+            subtype_counter[subtype] += 1
+            ref_by_subtype[subtype][ref_name] += 1
 
     # ------------------------------------------------------------------ #
     # Sanity check: BAM contained at least one primary alignment.        #
@@ -231,22 +247,16 @@ def classify(
         log(
             f"WARNING: {unmatched_header_reads} primary read(s) mapped to a "
             "reference whose header did not match the expected "
-            "'<genotype>[<letters>]_<accession>' pattern. These reads are "
-            "excluded from genotype assignment but counted in "
+            "'<genotype><letters>_<accession>' pattern. These reads are "
+            "excluded from subtype assignment but counted in "
             "total_mapped_reads."
         )
 
     # ------------------------------------------------------------------ #
     # Compute fractions / mixed flag.                                    #
     # ------------------------------------------------------------------ #
-    #
-    # `total_mapped_reads` is defined as primary, non-ambiguous reads
-    # (matches the JSON schema example in docs/configuration.md where
-    # `total_mapped_reads + ambiguous_reads` ≈ primary count).
-    total_mapped_reads = sum(geno_counter.values())
+    total_mapped_reads = sum(subtype_counter.values())
 
-    # Ambiguous fraction is reported against (total_mapped + ambiguous) so the
-    # caller can see what share of usable primary alignments was discarded.
     ambig_denominator = total_mapped_reads + ambiguous_reads
     ambiguous_fraction = (
         round(ambiguous_reads / ambig_denominator, 6)
@@ -255,13 +265,11 @@ def classify(
     )
 
     genotypes_payload: list[dict] = []
-    primary_genotype: Optional[str] = None
+    primary_genotype: Optional[str] = None   # holds the primary subtype
     secondary_genotypes: list[str] = []
     is_mixed = False
-    subtype_mixed_note: Optional[str] = None
 
     if total_mapped_reads == 0:
-        # All primary reads were ambiguous (or had unmatched headers).
         log(
             "WARNING: Zero non-ambiguous primary reads. "
             f"(ambiguous={ambiguous_reads}, unmatched_header={unmatched_header_reads}, "
@@ -269,73 +277,40 @@ def classify(
             "Emitting an empty genotype summary."
         )
     else:
-        # Sort genotypes by reads desc, then by numerically-lowest label asc
-        # for deterministic tie-breaking.
-        def sort_key(item):
-            gt, n = item
-            try:
-                return (-n, int(gt))
-            except ValueError:
-                return (-n, float("inf"))
-
-        ranked = sorted(geno_counter.items(), key=sort_key)
+        ranked = sorted(subtype_counter.items(), key=_subtype_sort_key)
 
         # Tie detection (informational warning).
         if len(ranked) >= 2 and ranked[0][1] == ranked[1][1]:
             log(
-                f"WARNING: Tie in primary-genotype read count "
-                f"(genotype {ranked[0][0]} == genotype {ranked[1][0]} "
+                f"WARNING: Tie in primary-subtype read count "
+                f"(subtype {ranked[0][0]} == subtype {ranked[1][0]} "
                 f"with {ranked[0][1]} reads each). "
-                f"Assigned primary genotype = {ranked[0][0]} "
-                "(numerically lowest)."
+                f"Assigned primary subtype = {ranked[0][0]} "
+                "(lowest major genotype, then alphabetically earliest subtype)."
             )
 
-        for gt, n in ranked:
+        for st, n in ranked:
             fraction = round(n / total_mapped_reads, 6)
-            # Top subtype for this genotype.
-            top_subtype, _ = subtype_by_geno[gt].most_common(1)[0]
-            # Top reference within (genotype, top_subtype).
-            top_reference, _ = ref_by_geno_subtype[(gt, top_subtype)].most_common(1)[0]
+            major_gt = re.match(r"^(\d+)", st).group(1)
+            top_reference, _ = ref_by_subtype[st].most_common(1)[0]
             genotypes_payload.append(
                 {
-                    "genotype":      gt,
+                    "genotype":      st,        # subtype label used as the branch key
+                    "major_genotype": major_gt,  # e.g. "1" for "1a"/"1b"
                     "fraction":      fraction,
                     "reads":         n,
-                    "top_subtype":   top_subtype,
+                    "top_subtype":   st,         # alias kept for downstream compat
                     "top_reference": top_reference,
                 }
             )
 
-        primary_genotype = ranked[0][0]
-        primary_reads = ranked[0][1]
+        primary_genotype = ranked[0][0]   # e.g. "1a"
 
-        for gt, n in ranked[1:]:
-            fraction = n / total_mapped_reads
-            if fraction >= min_secondary_fraction:
-                secondary_genotypes.append(gt)
+        for st, n in ranked[1:]:
+            if n / total_mapped_reads >= min_secondary_fraction:
+                secondary_genotypes.append(st)
 
         is_mixed = bool(secondary_genotypes)
-
-        # Within-genotype subtype-mixed note (informational; does NOT trigger
-        # a branch — only the major-genotype threshold does).
-        primary_subtypes = subtype_by_geno[primary_genotype]
-        if primary_reads > 0 and len(primary_subtypes) > 1:
-            dominant_subtype, dominant_n = primary_subtypes.most_common(1)[0]
-            secondary_subtypes = [
-                (st, c) for st, c in primary_subtypes.items()
-                if st != dominant_subtype and c / primary_reads >= 0.20
-            ]
-            if secondary_subtypes:
-                pretty = ", ".join(
-                    f"{st} ({round(c / primary_reads, 3)})"
-                    for st, c in sorted(secondary_subtypes,
-                                        key=lambda x: -x[1])
-                )
-                subtype_mixed_note = (
-                    f"Within primary genotype {primary_genotype} "
-                    f"(dominant subtype {dominant_subtype}), "
-                    f"non-dominant subtype(s) ≥20%: {pretty}"
-                )
 
     branches_to_run: list[str] = (
         [primary_genotype] + secondary_genotypes if primary_genotype else []
@@ -355,8 +330,6 @@ def classify(
         "secondary_genotypes": secondary_genotypes,
         "branches_to_run":     branches_to_run,
     }
-    if subtype_mixed_note:
-        summary["subtype_mixed_note"] = subtype_mixed_note
 
     with open(out_json, "w") as fh:
         json.dump(summary, fh, indent=2)
@@ -381,7 +354,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     """Parse and return command-line arguments."""
     p = argparse.ArgumentParser(
         description=(
-            "Classify HCV reads by genotype from a Round-1 competitive-mapping "
+            "Classify HCV reads by subtype from a Round-1 competitive-mapping "
             "BAM and emit a per-sample summary JSON + per-read TSV."
         ),
     )
@@ -410,7 +383,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         type=float,
         default=0.05,
         help=(
-            "Minimum fraction of non-ambiguous reads a non-primary genotype "
+            "Minimum fraction of non-ambiguous reads a non-primary subtype "
             "must reach to trigger the mixed-infection flag (default: 0.05)."
         ),
     )
@@ -420,14 +393,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default=20,
         help=(
             "A read is flagged as ambiguous when (AS - XS) < this value. "
-            "Ambiguous reads are excluded from per-genotype counts "
+            "Ambiguous reads are excluded from per-subtype counts "
             "(default: 20)."
         ),
     )
-    # `--panel-fasta` is accepted (and ignored) so both invocation styles
-    # described in the implementation prompts are supported. Subtype/genotype
-    # are derived from the reference names in the BAM header, which match the
-    # panel FASTA exactly.
     p.add_argument(
         "--panel-fasta",
         required=False,

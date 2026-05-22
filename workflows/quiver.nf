@@ -45,6 +45,9 @@
                                   but keep LoFreq.  Flag passed to SAMPLE_REPORT.
         LOW_COVERAGE_CONSENSUS  — APPLY_CONSENSUS sentinel; downstream continues,
                                   flag passed to SAMPLE_REPORT.
+        DIVERGENT_CONSENSUS     — CHECK_CONSENSUS_DIVERGENCE sentinel; fired when
+                                  consensus identity vs panel reference < params.min_consensus_identity
+                                  (default 0.90); informational, pipeline continues.
         devider.failed          — DEVIDER process; FORMAT_HAPLOTYPES degrades
                                   gracefully (empty FASTA + fallback JSON).
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -744,6 +747,13 @@ workflow QUIVER {
         .map { meta, f -> tuple(meta.id, f) }
         .groupTuple(by: 0)
 
+    // Sentinel flag files: mix LOW_COVERAGE_CONSENSUS and DIVERGENT_CONSENSUS from
+    // BUILD_CONSENSUS, then group all per-branch sentinels by sample_id.
+    ch_flags_by_sample = BUILD_CONSENSUS.out.low_cov_sentinel
+        .mix(BUILD_CONSENSUS.out.divergent_sentinel)
+        .map { meta, f -> tuple(meta.id, f) }
+        .groupTuple(by: 0)
+
     // Per-sample (not per-branch) channels: genotype summary, nanoq, host stats.
     ch_summary_by_sample   = GENOTYPE_CLASSIFY.out.summary.map { meta, j -> tuple(meta.id, j) }
     ch_nanoq_raw_by_sample = RAW_QC.out.nanoq_jsons.map         { meta, j -> tuple(meta.id, j) }
@@ -780,9 +790,10 @@ workflow QUIVER {
         .join(ch_flagstat_by_sample,     by: 0, remainder: true)
         .join(ch_haplotype_report_by_sample, by: 0, remainder: true)
         .join(ch_nanoplot_by_sample,     by: 0, remainder: true)
+        .join(ch_flags_by_sample,        by: 0, remainder: true)
         .map { sid, meta, summary, nanoq_raw, nanoq_filt, host_stats,
                mosdepth_files, mosdepth_beds, variant_tsvs, flagstat_files,
-               haplotype_reports, nanoplot_dirs ->
+               haplotype_reports, nanoplot_dirs, flag_files ->
             tuple(
                 meta,
                 summary           ?: [],
@@ -794,13 +805,13 @@ workflow QUIVER {
                 variant_tsvs      ?: [],
                 flagstat_files    ?: [],
                 haplotype_reports ?: [],
-                nanoplot_dirs  ?: [],
-                []  // flag_files placeholder — sentinels published separately
+                nanoplot_dirs     ?: [],
+                flag_files        ?: []
             )
         }
         // Drop samples with no genotype summary (NO_HCV_DETECTED short-circuits).
         // Those samples get a PIPELINE_FLAG.txt via EMIT_FAILURE_FLAG instead.
-        .filter { meta, summary, _na, _nf, _hs, _md, _mb, _vt, _fs, _hr, _np, _ff ->
+        .filter { meta, summary, _na, _nf, _hs, _md, _mb, _vt, _fs, _hr, _np, _fl ->
             summary != null && !(summary instanceof List && summary.isEmpty())
         }
 

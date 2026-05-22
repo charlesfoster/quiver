@@ -17,12 +17,13 @@
         (< params.min_consensus_cov, default 10×) masked as N.
 
     Modules chained (in order):
-        1. EXTRACT_REF             — extract dominant reference from the panel
-        2. MINIMAP2_CONSENSUS_MAP  — map per-genotype reads to dominant reference
-        3. BCFTOOLS_CONSENSUS_CALL — call majority-allele variants
-        4. MAKE_MASK_BED           — generate low-coverage mask BED via mosdepth
-        5. APPLY_CONSENSUS         — apply variants + mask, rename header
-        6. INDEX_CONSENSUS         — build samtools .fai and minimap2 .mmi indices
+        1. EXTRACT_REF                  — extract dominant reference from the panel
+        2. MINIMAP2_CONSENSUS_MAP       — map per-genotype reads to dominant reference
+        3. BCFTOOLS_CONSENSUS_CALL      — call majority-allele variants
+        4. MAKE_MASK_BED                — generate low-coverage mask BED via mosdepth
+        5. APPLY_CONSENSUS              — apply variants + mask, rename header
+        6. INDEX_CONSENSUS              — build samtools .fai and minimap2 .mmi indices
+        7. CHECK_CONSENSUS_DIVERGENCE   — pairwise identity vs panel ref; novel-subtype flag
 
     Input channels:
         ch_branch  — [branch_meta, reads_fastq, dominant_ref_id]
@@ -32,10 +33,12 @@
                      Singleton emitted by INDEX_PANEL (Prompt 6).
 
     Output channels:
-        consensus       — [meta, consensus_fasta, consensus_fai, consensus_mmi]
-                          Per-branch; consumed by MINIMAP2_ROUND2 (Prompt 12).
-        low_cov_sentinel — [meta, LOW_COVERAGE_CONSENSUS file]  optional
-        versions        — version files from all included processes
+        consensus          — [meta, consensus_fasta, consensus_fai, consensus_mmi]
+                             Per-branch; consumed by MINIMAP2_ROUND2 (Prompt 12).
+        low_cov_sentinel   — [meta, LOW_COVERAGE_CONSENSUS file]  optional
+        divergent_sentinel — [meta, DIVERGENT_CONSENSUS file]  optional
+        divergence_stats   — [meta, *_divergence.json]
+        versions           — version files from all included processes
 
     Channel join strategy:
         ch_branch carries `dominant_ref_id` (a val) — it is combined with
@@ -52,12 +55,13 @@
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 */
 
-include { EXTRACT_REF             } from '../../modules/local/extract_ref/main'
-include { MINIMAP2_CONSENSUS_MAP  } from '../../modules/local/minimap2_consensus_map/main'
-include { BCFTOOLS_CONSENSUS_CALL } from '../../modules/local/bcftools_consensus_call/main'
-include { MAKE_MASK_BED           } from '../../modules/local/make_mask_bed/main'
-include { APPLY_CONSENSUS         } from '../../modules/local/apply_consensus/main'
-include { INDEX_CONSENSUS         } from '../../modules/local/index_consensus/main'
+include { EXTRACT_REF                  } from '../../modules/local/extract_ref/main'
+include { MINIMAP2_CONSENSUS_MAP       } from '../../modules/local/minimap2_consensus_map/main'
+include { BCFTOOLS_CONSENSUS_CALL      } from '../../modules/local/bcftools_consensus_call/main'
+include { MAKE_MASK_BED                } from '../../modules/local/make_mask_bed/main'
+include { APPLY_CONSENSUS              } from '../../modules/local/apply_consensus/main'
+include { INDEX_CONSENSUS              } from '../../modules/local/index_consensus/main'
+include { CHECK_CONSENSUS_DIVERGENCE   } from '../../modules/local/check_consensus_divergence/main'
 
 
 workflow BUILD_CONSENSUS {
@@ -185,8 +189,37 @@ workflow BUILD_CONSENSUS {
     INDEX_CONSENSUS(APPLY_CONSENSUS.out.consensus)
     ch_versions = ch_versions.mix(INDEX_CONSENSUS.out.versions)
 
+    // ----------------------------------------------------------------
+    // Step 7: Check pairwise identity between sample consensus and the
+    //         dominant panel reference.
+    //
+    // minimap2 asm5 alignment → identity = matches / alignment_length.
+    // Emits DIVERGENT_CONSENSUS sentinel when identity < params.min_consensus_identity.
+    //
+    // Join: consensus FASTA (from APPLY_CONSENSUS) + ref FASTA (from
+    // EXTRACT_REF), keyed by [meta.id, meta.genotype].
+    // ----------------------------------------------------------------
+    ch_consensus_for_div = APPLY_CONSENSUS.out.consensus.map { meta, fasta ->
+        tuple([meta.id, meta.genotype], meta, fasta)
+    }
+
+    ch_ref_for_div = EXTRACT_REF.out.ref_fasta.map { meta, ref_fasta ->
+        tuple([meta.id, meta.genotype], ref_fasta)
+    }
+
+    ch_divergence_input = ch_consensus_for_div
+        .join(ch_ref_for_div, by: 0)
+        .map { key, meta, consensus_fasta, ref_fasta ->
+            tuple(meta, consensus_fasta, ref_fasta)
+        }
+
+    CHECK_CONSENSUS_DIVERGENCE(ch_divergence_input)
+    ch_versions = ch_versions.mix(CHECK_CONSENSUS_DIVERGENCE.out.versions)
+
     emit:
-    consensus        = INDEX_CONSENSUS.out.consensus          // [meta, fasta, fai, mmi]
-    low_cov_sentinel = APPLY_CONSENSUS.out.low_cov_sentinel   // [meta, sentinel] optional
-    versions         = ch_versions
+    consensus           = INDEX_CONSENSUS.out.consensus                    // [meta, fasta, fai, mmi]
+    low_cov_sentinel    = APPLY_CONSENSUS.out.low_cov_sentinel             // [meta, sentinel] optional
+    divergent_sentinel  = CHECK_CONSENSUS_DIVERGENCE.out.sentinel          // [meta, sentinel] optional
+    divergence_stats    = CHECK_CONSENSUS_DIVERGENCE.out.stats             // [meta, json]
+    versions            = ch_versions
 }

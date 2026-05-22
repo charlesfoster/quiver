@@ -14,7 +14,7 @@ To set many parameters for a site, write a params JSON file and pass it with `-p
 | Parameter | Type | Default | Description | When to change |
 |---|---|---|---|---|
 | `--input` | path | required | Path to the samplesheet CSV. Must contain `sample_id`, `fastq`, and optionally `metadata_json` columns. | Always required. |
-| `--reference_panel` | path | `assets/hcv_references.fasta` | HCV reference panel FASTA (238 sequences). Used for Round 1 competitive mapping and genotype classification. | Replace with a custom panel if working with non-standard genotypes or if the bundled panel is updated. |
+| `--reference_panel` | path | `assets/hcv_references.fasta` | HCV reference panel FASTA (186 named-subtype sequences). Used for Round 1 competitive mapping and subtype classification. All sequences must follow the `<subtype>_<accession>` naming convention (e.g. `1a_M62321.1`). | Replace with a custom panel if working with non-standard genotypes or if the bundled panel is updated. |
 | `--host_reference` | path | null | Path to a local GRCh38 no-alt FASTA or a pre-built minimap2 `.mmi` index. Only required with `--use_minimap2` or `--use_hostile`. Not needed for the default nohuman mode. | Provide when using `--use_minimap2` or `--use_hostile`. A pre-built `.mmi` skips indexing and saves ~10 min per run. |
 | `--outdir` | path | `results` | Output directory. Created if it does not exist. | Change to avoid overwriting a previous run. |
 
@@ -46,6 +46,7 @@ To set many parameters for a site, write a params JSON file and pass it with `-p
 |---|---|---|---|---|
 | `--min_mean_coverage` | integer | `100` | Mean genome coverage below which DEVIDER is skipped and a `LOW_COVERAGE` flag is set. LoFreq still runs. | Decrease to 50 if haplotype reconstruction is not required and low-coverage variant calls are acceptable. |
 | `--min_consensus_cov` | integer | `10` | Per-position coverage below which a position is masked with N in the per-genotype consensus. Masked positions are excluded from Round 2 variant calling. | Increase for higher confidence consensus; decrease to recover more consensus bases from low-coverage samples. |
+| `--min_consensus_identity` | float | `0.90` | Pairwise nucleotide identity threshold between the polished sample consensus and its dominant panel reference (minimap2 asm5). Below this, a `DIVERGENT_CONSENSUS` flag is set. The sample continues processing normally — the flag is informational. | Decrease to 0.88 for genotype-6 samples where some subtypes are inherently more distant from panel references. Increase to 0.93 for early-warning QC in well-characterised cohorts. Note: if `LOW_COVERAGE_CONSENSUS` also fired (many N positions), identity will be artificially low — consider both flags together. |
 | `--min_variant_depth` | integer | `20` | LoFreq DP (total depth) filter applied during variant filtering. Variants at positions with fewer than this many reads are discarded. | Increase for stricter variant calls; decrease only for very low-coverage samples. |
 
 ---

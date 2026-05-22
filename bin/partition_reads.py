@@ -117,7 +117,7 @@ def load_assignments(path: str) -> dict[str, tuple[Optional[str], bool]]:
         # read_name  reference  subtype  genotype  AS  XS  is_ambiguous
         try:
             idx_name = header.index("read_name")
-            idx_gt   = header.index("genotype")
+            idx_gt   = header.index("subtype")   # route by subtype, not major genotype
             idx_amb  = header.index("is_ambiguous")
         except ValueError as exc:
             log(
@@ -352,9 +352,9 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         required=False,
         default=None,
         help=(
-            "Optional comma-separated list of genotypes to emit "
-            "(e.g. '1,3').  Reads whose genotype is outside this list "
-            "are routed to the ambiguous pool.  Defaults to all genotypes "
+            "Optional comma-separated list of subtypes to emit "
+            "(e.g. '1a,3a').  Reads whose subtype is outside this list "
+            "are routed to the ambiguous pool.  Defaults to all subtypes "
             "present in the assignments TSV."
         ),
     )

@@ -183,6 +183,7 @@ process SAMPLE_REPORT {
                                           -o -name "*.ALL_READS_FILTERED" \\
                                           -o -name "*.EMPTY_INPUT" \\
                                           -o -name "*.LOW_COVERAGE_CONSENSUS" \\
+                                          -o -name "*.DIVERGENT_CONSENSUS" \\
                                           -o -name "*.DEVIDER_FAILED" \\
                                           2>/dev/null | tr '\\n' ' ')
     if [ -n "\${sentinel_files}" ]; then

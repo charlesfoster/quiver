@@ -27,7 +27,7 @@ Round 1 competitive mapping results and genotype classification.
 
 | Path | Format | Contents | Absent when |
 |---|---|---|---|
-| `<sample_id>.round1.bam` | BAM | Sorted, indexed Round 1 alignment against the 238-sequence reference panel | Never absent if the sample reached this step |
+| `<sample_id>.round1.bam` | BAM | Sorted, indexed Round 1 alignment against the 186-sequence named-subtype reference panel | Never absent if the sample reached this step |
 | `<sample_id>.round1.bam.bai` | BAI | Index for the Round 1 BAM | As above |
 | `<sample_id>.genotype_assignments.tsv` | TSV | One row per primary alignment: `read_id`, `ref_id`, `subtype`, `genotype`, `AS`, `mapq` | Fewer than `min_round1_mapped` reads mapped (`NO_HCV_DETECTED`) |
 | `<sample_id>.genotype_summary.json` | JSON | Aggregated genotype fractions, `is_mixed` flag, `branches_to_run` list. Schema in [docs/configuration.md](configuration.md) | `NO_HCV_DETECTED` |

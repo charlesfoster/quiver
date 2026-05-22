@@ -268,6 +268,18 @@ When the fraction of reads mapping to a secondary genotype meets or exceeds `par
 
 Adjust the threshold with `--min_secondary_fraction`. Setting it below 0.05 may increase false-positive mixed calls from cross-contamination.
 
+### Divergent consensus flagged
+
+The pipeline sets a `DIVERGENT_CONSENSUS` flag when the pairwise nucleotide identity between the polished sample consensus and its assigned panel reference falls below `params.min_consensus_identity` (default 0.90). The flag is informational — the sample continues through all downstream steps normally.
+
+**What it means:** The patient's viral strain is more divergent from any known reference in the panel than expected for a clean within-subtype assignment. Possible interpretations:
+
+1. **Novel subtype or highly divergent strain** — the most clinically interesting scenario. The assigned subtype label is the closest available, but the strain may represent an uncharacterised clade. Inspect the `*_divergence.json` file in `consensus/<GT>/` for the exact identity score and alignment coverage.
+2. **Correct assignment, divergent isolate** — common for genotype 6, where some subtypes are inherently distant from all panel references. If the `is_divergent` flag appears routinely for genotype-6 samples, lower the threshold with `--min_consensus_identity 0.88`.
+3. **Low-coverage artefact** — if `LOW_COVERAGE_CONSENSUS` also fired for the same branch, many N positions in the consensus will artificially depress identity (Ns never match the reference). Treat the identity figure with caution when both flags are present and prioritise improving sequencing depth.
+
+To investigate: the `*_divergence.json` file reports `consensus_identity`, `alignment_coverage`, `matches`, and `alignment_length`. A divergent identity with high alignment coverage (≥ 0.90) is more likely a genuine biological signal than one with low coverage (partial alignment, fragmented consensus).
+
 ### DEVIDER fails for a sample
 
 DEVIDER failure is non-fatal. The pipeline emits a `devider.failed` marker in the haplotypes directory, continues to reporting, and notes the failure in the per-sample HTML report. Check the Nextflow `.nextflow.log` and the `work/` directory for the DEVIDER process for the underlying error.
