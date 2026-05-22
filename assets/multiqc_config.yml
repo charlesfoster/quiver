@@ -28,6 +28,7 @@ log_filesize_limit: 500000000  # 500 MB — large HCV runs may have big logs
 # Only run parsers relevant to QuIVER outputs.  This keeps the report
 # focused and avoids false-positive parsing of unrelated files in the work dir.
 run_modules:
+    - custom_content
     - nanoplot
     - mosdepth
     - samtools
@@ -35,6 +36,9 @@ run_modules:
 
 # ── Module configuration ─────────────────────────────────────────────────────
 module_order:
+    - custom_content:
+        name: "QuIVER Summary"
+        info: "Per-sample genotype, read funnel, variant count, and haplotype count from the QuIVER pipeline."
     - nanoplot:
         name: "NanoPlot (raw read quality)"
         info: "Read length and quality metrics from raw ONT reads before filtering."

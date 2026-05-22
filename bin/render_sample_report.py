@@ -792,6 +792,152 @@ def find_template(explicit: str | None) -> Path:
     )
 
 
+# ---------------------------------------------------------------------------
+# MultiQC custom content TSV generation
+# ---------------------------------------------------------------------------
+
+_SAMPLE_MQC_HEADER = """\
+# id: 'quiver_sample_stats'
+# section_name: 'QuIVER: Sample Summary'
+# description: 'Per-sample read processing and genotyping statistics from the QuIVER HCV pipeline.'
+# plot_type: 'generalstats'
+# pconfig:
+#   - status:
+#       title: 'Status'
+#       description: 'Overall pipeline status for this sample'
+#   - genotype:
+#       title: 'Genotype'
+#       description: 'Primary HCV genotype detected'
+#   - subtype:
+#       title: 'Subtype'
+#       description: 'Top HCV subtype (e.g. 1a, 3a)'
+#   - is_mixed:
+#       title: 'Mixed'
+#       description: 'Mixed genotype infection (≥5% reads to secondary genotype)'
+#   - raw_reads:
+#       title: 'Raw Reads'
+#       description: 'Total raw reads from sequencer'
+#       format: '{:,.0f}'
+#       min: 0
+#       scale: 'Greens'
+#   - filtered_reads:
+#       title: 'Filtered Reads'
+#       description: 'Reads after chopper length/quality filtering'
+#       format: '{:,.0f}'
+#       min: 0
+#       scale: 'Blues'
+#   - hcv_reads:
+#       title: 'HCV Reads'
+#       description: 'Reads remaining after host depletion'
+#       format: '{:,.0f}'
+#       min: 0
+#       scale: 'Blues'
+#   - host_pct:
+#       title: 'Host %'
+#       description: 'Percentage of reads removed as host (GRCh38)'
+#       max: 100
+#       min: 0
+#       suffix: '%'
+#       scale: 'Reds'
+"""
+
+_BRANCH_MQC_HEADER = """\
+# id: 'quiver_branch_stats'
+# section_name: 'QuIVER: Genotype Branch Summary'
+# description: 'Per-genotype variant calling and haplotype reconstruction statistics from the QuIVER HCV pipeline. Rows are keyed {sample}_{genotype} to align with mosdepth/flagstat columns.'
+# plot_type: 'generalstats'
+# pconfig:
+#   - variant_count:
+#       title: 'Variants'
+#       description: 'Filtered LoFreq variants (AF ≥ 1%, DP ≥ 20)'
+#       format: '{:,.0f}'
+#       min: 0
+#       scale: 'Oranges'
+#   - haplotype_count:
+#       title: 'Haplotypes'
+#       description: 'Reconstructed haplotypes from DEVIDER'
+#       format: '{:,.0f}'
+#       min: 0
+#       scale: 'Purples'
+#   - dominant_hap_pct:
+#       title: 'Dom. Hap. %'
+#       description: 'Abundance of the most dominant haplotype'
+#       max: 100
+#       min: 0
+#       suffix: '%'
+#       scale: 'RdYlGn'
+"""
+
+
+def _fmt(v: Any) -> str:
+    """Return v as string, or empty string for None."""
+    return "" if v is None else str(v)
+
+
+def write_multiqc_tsv(json_out: dict, sample_id: str) -> None:
+    """Write *_quiver_sample_mqc.tsv and *_quiver_branch_mqc.tsv for MultiQC."""
+    funnel   = json_out.get("funnel") or {}
+    status   = json_out.get("overall_status", "")
+    is_mixed = json_out.get("is_mixed", False)
+    branches = json_out.get("branches") or []
+
+    primary_gt      = json_out.get("primary_genotype") or ""
+    primary_subtype = json_out.get("primary_subtype") or ""
+    # Fall back to genotype_summary entries if primary_subtype wasn't serialised
+    if not primary_subtype and primary_gt:
+        gt_entries = (json_out.get("genotype_summary") or {}).get("genotypes") or []
+        for entry in gt_entries:
+            if str(entry.get("genotype")) == str(primary_gt):
+                primary_subtype = entry.get("top_subtype") or ""
+                break
+
+    # For mixed infections show all genotypes joined
+    if is_mixed and branches:
+        gt_display = "+".join(b["genotype"] for b in branches)
+    else:
+        gt_display = primary_gt or "N/A"
+
+    host_fraction = funnel.get("host_fraction") or 0
+    host_pct      = f"{host_fraction * 100:.2f}"
+
+    # --- sample-level TSV ---
+    sample_tsv = Path(f"{sample_id}_quiver_sample_mqc.tsv")
+    with sample_tsv.open("w") as fh:
+        fh.write(_SAMPLE_MQC_HEADER)
+        fh.write("Sample\tstatus\tgenotype\tsubtype\tis_mixed\traw_reads\tfiltered_reads\thcv_reads\thost_pct\n")
+        fh.write(
+            f"{sample_id}\t{status}\t{gt_display}\t{primary_subtype or 'N/A'}\t"
+            f"{'Yes' if is_mixed else 'No'}\t"
+            f"{_fmt(funnel.get('raw_reads'))}\t"
+            f"{_fmt(funnel.get('filtered_reads'))}\t"
+            f"{_fmt(funnel.get('host_depleted_reads'))}\t"
+            f"{host_pct}\n"
+        )
+
+    # --- branch-level TSV (one row per genotype branch) ---
+    branch_tsv = Path(f"{sample_id}_quiver_branch_mqc.tsv")
+    with branch_tsv.open("w") as fh:
+        fh.write(_BRANCH_MQC_HEADER)
+        fh.write("Sample\tvariant_count\thaplotype_count\tdominant_hap_pct\n")
+        for b in branches:
+            gt      = b.get("genotype", "")
+            row_id  = f"{sample_id}_{gt}"
+            vc      = _fmt(b.get("variant_count"))
+            hc      = _fmt(b.get("haplotype_count"))
+            # Dominant haplotype abundance from haplotype chains
+            hap_data = b.get("haplotypes") or {}
+            chains   = hap_data.get("chains") or []
+            if chains:
+                dom_abund = max(
+                    (c.get("abundance") or c.get("abundance_lower_bound") or 0)
+                    for c in chains
+                )
+                dom_pct = f"{dom_abund * 100:.1f}"
+            else:
+                dom_pct = ""
+            fh.write(f"{row_id}\t{vc}\t{hc}\t{dom_pct}\n")
+
+
 def main() -> None:
     args = parse_args()
 
@@ -812,6 +958,7 @@ def main() -> None:
         json.dumps(json_out, indent=2, default=str),
         encoding="utf-8",
     )
+    write_multiqc_tsv(json_out, args.sample_id)
 
     print(
         f"[render_sample_report] Done: {args.output_html}  {args.output_json}",

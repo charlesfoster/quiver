@@ -164,7 +164,9 @@ The work directory (default `./work/`) must still exist. Delete it to force a fu
 
 ## Resource customisation
 
-Override resource ceilings at the command line:
+The pipeline enforces hard resource ceilings via `params.max_cpus`, `params.max_memory`, and `params.max_time` (defaults: 16 CPUs, 64 GB, 24 h). Individual processes scale within those ceilings — they never exceed them regardless of label.
+
+### Option A — CLI flags (one-off runs)
 
 ```bash
 nextflow run main.nf -profile docker \
@@ -175,7 +177,78 @@ nextflow run main.nf -profile docker \
     --outdir results/run1
 ```
 
-Per-process resource labels (`process_low`, `process_medium`, `process_high`, `process_high_memory`) are defined in `conf/base.config`. To change resources for a specific process, add a `withName` block to a custom config file and pass it with `-c my.config`.
+### Option B — config file (reusable, shareable)
+
+Create a file (name it anything — `resources.config` is conventional) and pass it with `-c`:
+
+```groovy
+// resources.config — machine-specific resource limits for QuIVER
+params {
+    max_cpus   = 8
+    max_memory = '32.GB'
+    max_time   = '12.h'
+}
+```
+
+```bash
+nextflow run main.nf -profile docker -c resources.config \
+    --input samplesheet.csv \
+    --outdir results/run1
+```
+
+Multiple `-c` files are merged left-to-right, so a shared team config can be combined with a per-run override:
+
+```bash
+nextflow run main.nf -profile katana \
+    -c conf/team_hpc.config \
+    -c resources.config \
+    --input samplesheet.csv \
+    --outdir results/run1
+```
+
+### Option C — override `process.resourceLimits` directly
+
+If you want to bypass `params.*` entirely and set the Nextflow-native cap, use `process.resourceLimits` in the config file. This is equivalent but more explicit, and useful if you are composing configs that shouldn't touch `params`:
+
+```groovy
+// resources.config
+process {
+    resourceLimits = [
+        cpus:   8,
+        memory: 32.GB,
+        time:   12.h
+    ]
+}
+```
+
+> **Note:** `conf/base.config` derives `resourceLimits` from `params.max_*`. If you set `process.resourceLimits` in a `-c` file, it overrides `conf/base.config`'s value directly, ignoring `params.max_*`. Use Option B (params) to stay consistent with the pipeline's retry scaling; use Option C when you need a hard ceiling independent of params.
+
+### Overriding resources for a specific process
+
+To allocate more (or less) to a single process, use `withName`:
+
+```groovy
+// resources.config
+params {
+    max_cpus   = 8
+    max_memory = '32.GB'
+    max_time   = '12.h'
+}
+
+process {
+    withName: 'LOFREQ_CALL' {
+        cpus   = 8
+        memory = 24.GB
+        time   = 6.h
+    }
+    withName: 'DEVIDER' {
+        cpus   = 4
+        memory = 16.GB
+    }
+}
+```
+
+Per-process labels (`process_low`, `process_medium`, `process_high`, `process_high_memory`) are defined in `conf/base.config` — check there to see which label each process uses before overriding.
 
 ---
 

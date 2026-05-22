@@ -101,6 +101,12 @@ process SAMPLE_REPORT {
     tuple val(meta),
           path("${meta.id}_summary.json"),
           emit: json
+    tuple val(meta),
+          path("${meta.id}_quiver_sample_mqc.tsv"),
+          emit: multiqc_sample
+    tuple val(meta),
+          path("${meta.id}_quiver_branch_mqc.tsv"),
+          emit: multiqc_branch
     path "versions.yml", emit: versions
 
     script:
@@ -228,6 +234,9 @@ process SAMPLE_REPORT {
       "_stub":            true
     }
     JSONEOF
+
+    printf '# id: quiver_sample_stats\\nSample\\tstatus\\n${meta.id}\\tPASS\\n' > ${meta.id}_quiver_sample_mqc.tsv
+    printf '# id: quiver_branch_stats\\nSample\\tvariant_count\\n' > ${meta.id}_quiver_branch_mqc.tsv
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

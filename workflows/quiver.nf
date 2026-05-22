@@ -831,6 +831,8 @@ workflow QUIVER {
         .mix(MINIMAP2_ROUND2.out.flagstat.map    { meta, f -> f })
         .mix(MOSDEPTH.out.summary.map            { meta, f -> f })
         .mix(MOSDEPTH.out.regions.map            { meta, f -> f })
+        .mix(SAMPLE_REPORT.out.multiqc_sample.map { meta, f -> f })
+        .mix(SAMPLE_REPORT.out.multiqc_branch.map { meta, f -> f })
 
     ch_multiqc_config = Channel.value(file("${projectDir}/assets/multiqc_config.yml", checkIfExists: true))
 
