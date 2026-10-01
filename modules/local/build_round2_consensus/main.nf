@@ -14,7 +14,7 @@
         `bcftools +setGT` to demote sites with INFO/AF < 0.5 to GT=0/1.
         `bcftools consensus -H I` then emits IUPAC codes at heterozygous positions.
 
-    Container: bcftools 1.21
+    Container: bcftools 1.24
     Label: process_low
 
     Published to:
@@ -29,8 +29,8 @@ process BUILD_ROUND2_CONSENSUS {
     tag "${meta.id}:${meta.genotype}"
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/bcftools:1.21--h8b25389_0' :
-        'quay.io/biocontainers/bcftools:1.21--h8b25389_0' }"
+        'https://depot.galaxyproject.org/singularity/bcftools:1.24--h118bc1c_2' :
+        'quay.io/biocontainers/bcftools:1.24--h118bc1c_2' }"
     conda "${moduleDir}/environment.yml"
 
     publishDir (
@@ -154,7 +154,7 @@ process BUILD_ROUND2_CONSENSUS {
     touch ${iupac_name_s}.vcf.gz   ${iupac_name_s}.vcf.gz.tbi
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: "1.21"
+        bcftools: "1.24"
     END_VERSIONS
     """
 }

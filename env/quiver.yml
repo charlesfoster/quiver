@@ -21,7 +21,7 @@ dependencies:
 
   # SAM/BAM/VCF manipulation
   - bioconda::samtools=1.21
-  - bioconda::bcftools=1.21
+  - bioconda::bcftools=1.24
 
   # Coverage
   - bioconda::mosdepth=0.3.10

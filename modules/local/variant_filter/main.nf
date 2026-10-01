@@ -27,7 +27,7 @@
 
     Expression operator note:
         bcftools filter expression uses `&&` for AND (not `&`).  Both forms work
-        in bcftools 1.21 for the `-i` flag, but `&&` is the documented form.
+        in bcftools 1.24 for the `-i` flag, but `&&` is the documented form.
 
     TSV report columns:
         CHROM   reference sequence name
@@ -48,7 +48,7 @@
         tsv      — [meta, "*_variants.tsv"]
         versions — versions.yml
 
-    Container: quay.io/biocontainers/bcftools:1.21--h8b25389_0
+    Container: quay.io/biocontainers/bcftools:1.24--h118bc1c_2
     Label: process_low (1 CPU, 2 GB, 5 min — Step 5.16 resource spec).
 
     Output published to:
@@ -63,8 +63,8 @@ process VARIANT_FILTER {
     tag "${meta.id}:${meta.genotype}"
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/bcftools:1.21--h8b25389_0' :
-        'quay.io/biocontainers/bcftools:1.21--h8b25389_0' }"
+        'https://depot.galaxyproject.org/singularity/bcftools:1.24--h118bc1c_2' :
+        'quay.io/biocontainers/bcftools:1.24--h118bc1c_2' }"
     conda "${moduleDir}/environment.yml"
 
     publishDir (
@@ -141,7 +141,7 @@ process VARIANT_FILTER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: "1.21"
+        bcftools: "1.24"
     END_VERSIONS
     """
 }

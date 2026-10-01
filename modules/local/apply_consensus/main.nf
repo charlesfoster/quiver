@@ -22,7 +22,7 @@
         3. Pass/fail check: warn if length outside [4000,11000] bp;
            emit LOW_COVERAGE_CONSENSUS sentinel if N-fraction >= 30%.
 
-    Container: bcftools 1.21
+    Container: bcftools 1.24
     Label: process_medium
 
     Output published to:
@@ -37,8 +37,8 @@ process APPLY_CONSENSUS {
     tag "${meta.id}:${meta.genotype}"
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/bcftools:1.21--h8b25389_0' :
-        'quay.io/biocontainers/bcftools:1.21--h8b25389_0' }"
+        'https://depot.galaxyproject.org/singularity/bcftools:1.24--h118bc1c_2' :
+        'quay.io/biocontainers/bcftools:1.24--h118bc1c_2' }"
     conda "${moduleDir}/environment.yml"
 
     publishDir (
@@ -132,7 +132,7 @@ process APPLY_CONSENSUS {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: "1.21"
+        bcftools: "1.24"
     END_VERSIONS
     """
 }

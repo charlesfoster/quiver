@@ -38,7 +38,7 @@
     NOTE on the FORMAT annotation flag:
         bcftools mpileup accepts either `-a AD,DP` (short) or
         `--annotate FORMAT/AD,FORMAT/DP` (long form).  Both are valid in
-        bcftools 1.21.  The short form `-a AD,DP` is used here for brevity.
+        bcftools 1.24.  The short form `-a AD,DP` is used here for brevity.
 
     NOTE on the AF field:
         After `bcftools call -mv`, the FORMAT/AD field contains [REF_depth, ALT_depth].
@@ -58,7 +58,7 @@
         raw_vcf     — [meta, "raw_variants.vcf.gz"]
         versions    — versions.yml
 
-    Container: bcftools 1.21 (CLAUDE.md §4).
+    Container: bcftools 1.24 (CLAUDE.md §4).
     Label: process_medium (4 CPU, 8 GB, 30 min — Step 5.10 resource spec).
 
     Output published to:
@@ -73,8 +73,8 @@ process BCFTOOLS_CONSENSUS_CALL {
     tag "${meta.id}:${meta.genotype}"
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/bcftools:1.21--h8b25389_0' :
-        'quay.io/biocontainers/bcftools:1.21--h8b25389_0' }"
+        'https://depot.galaxyproject.org/singularity/bcftools:1.24--h118bc1c_2' :
+        'quay.io/biocontainers/bcftools:1.24--h118bc1c_2' }"
     conda "${moduleDir}/environment.yml"
 
     publishDir (
@@ -105,7 +105,7 @@ process BCFTOOLS_CONSENSUS_CALL {
     # --ploidy 1: HCV is a haploid RNA virus.  Using ploidy 2 would
     #             produce heterozygous calls and break consensus (D8).
     # -mv:        output only variant sites; multiallelic caller.
-    # -d 10000:   depth cap to bound memory usage.
+    # -d 0:       unlimited mpileup depth (bcftools >= 1.23).
     # -Q 7:       minimum base quality (params.min_bq equivalent).
     # -q 20:      minimum mapping quality (params.min_mq equivalent).
     # -a AD,DP:   annotate FORMAT with allelic depth and total depth;
@@ -164,7 +164,7 @@ process BCFTOOLS_CONSENSUS_CALL {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: "1.21"
+        bcftools: "1.24"
     END_VERSIONS
     """
 }

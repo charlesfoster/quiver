@@ -30,7 +30,7 @@
         vcf    — [meta, "*_devider_input.vcf.gz", "*_devider_input.vcf.gz.tbi"]
         versions — versions.yml
 
-    Container: quay.io/biocontainers/bcftools:1.21--h8b25389_0
+    Container: quay.io/biocontainers/bcftools:1.24--h118bc1c_2
     Label: process_low
 
     Output NOT published — this VCF is an intermediate consumed only by DEVIDER.
@@ -44,8 +44,8 @@ process FILTER_VCF_FOR_DEVIDER {
     tag "${meta.id}:${meta.genotype}"
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/bcftools:1.21--h8b25389_0' :
-        'quay.io/biocontainers/bcftools:1.21--h8b25389_0' }"
+        'https://depot.galaxyproject.org/singularity/bcftools:1.24--h118bc1c_2' :
+        'quay.io/biocontainers/bcftools:1.24--h118bc1c_2' }"
     conda "${moduleDir}/environment.yml"
 
     input:
@@ -81,7 +81,7 @@ process FILTER_VCF_FOR_DEVIDER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        bcftools: "1.21"
+        bcftools: "1.24"
     END_VERSIONS
     """
 }
