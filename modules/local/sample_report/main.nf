@@ -93,6 +93,7 @@ process SAMPLE_REPORT {
           path(haplotype_reports),   // optional: list of *_haplotype_report.json
           path(nanoplot_dirs),      // optional: list of NanoPlot directories
           path(flag_files)          // optional: list of *.FLAGNAME sentinel files
+    path template_file             // staged so Docker can read the Jinja2 template
 
     output:
     tuple val(meta),
@@ -200,7 +201,7 @@ process SAMPLE_REPORT {
         ${nanoq_filt_arg} \\
         ${host_stats_arg} \\
         --run-info run_info.json \\
-        --template ${projectDir}/assets/templates/sample_report.html.j2 \\
+        --template ${template_file} \\
         --pipeline-version "${workflow.manifest.version ?: 'QuIVER'}" \\
         --output-html ${meta.id}_summary.html \\
         --output-json ${meta.id}_summary.json \\

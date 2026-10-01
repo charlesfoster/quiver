@@ -404,7 +404,7 @@ workflow QUIVER {
         if (!params.host_reference) {
             error "hostile (--use_hostile) requires --host_reference pointing to a hostile index directory."
         }
-        def ch_hostile_idx = Channel.fromPath(params.host_reference, checkIfExists: true).first()
+        def ch_hostile_idx = channel.fromPath(params.host_reference, checkIfExists: true).first()
         HOST_DEPLETE_HOSTILE(ch_post_filter_reads, ch_hostile_idx)
         ch_versions      = ch_versions.mix(HOST_DEPLETE_HOSTILE.out.versions)
         ch_hostdep_reads = HOST_DEPLETE_HOSTILE.out.reads
@@ -439,7 +439,7 @@ workflow QUIVER {
             if (href.endsWith('.mmi')) {
                 ch_host_mmi = Channel.fromPath(params.host_reference, checkIfExists: true).first()
             } else {
-                def ch_host_fasta = Channel.fromPath(params.host_reference, checkIfExists: true)
+                def ch_host_fasta = channel.fromPath(params.host_reference, checkIfExists: true)
                 INDEX_HOST(ch_host_fasta)
                 ch_versions = ch_versions.mix(INDEX_HOST.out.versions)
                 ch_host_mmi = INDEX_HOST.out.index.first()
@@ -815,7 +815,7 @@ workflow QUIVER {
             summary != null && !(summary instanceof List && summary.isEmpty())
         }
 
-    SAMPLE_REPORT(ch_report_input)
+    SAMPLE_REPORT(ch_report_input, file("${projectDir}/assets/templates/sample_report.html.j2", checkIfExists: true))
     ch_versions = ch_versions.mix(SAMPLE_REPORT.out.versions)
 
 
