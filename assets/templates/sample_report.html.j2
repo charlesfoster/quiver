@@ -456,7 +456,7 @@ details.params-details > summary:hover { text-decoration: underline; }
           &mdash; Variants: {{ branch.variant_count }}
         {% endif %}
         {% if branch.haplotype_count is not none %}
-          &mdash; Haplotypes: {{ branch.haplotype_count }}
+          &mdash; Primary haplotypes: {{ branch.haplotype_count }}
         {% endif %}
       </summary>
       <div class="branch-body">
@@ -563,55 +563,109 @@ details.params-details > summary:hover { text-decoration: underline; }
 
         <!-- Haplotype summary -->
         <div class="branch-subsection-title">Haplotype Reconstruction (DEVIDER)</div>
-        {% if branch.haplotypes %}
-          {% if branch.haplotypes.failed %}
-            <p class="empty-state">Haplotype reconstruction failed (DEVIDER exit non-zero). Sample continues — see flags.</p>
-          {% elif branch.haplotypes.fallback_used and not branch.haplotypes.chains %}
-            <p class="empty-state">DEVIDER produced no haplotype output for this branch.</p>
-          {% else %}
-            {% if branch.haplotypes.fallback_used %}
-              <p style="font-size:12px;color:#856404;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:4px 8px;margin-bottom:8px;">
-                Haplotypes shown without cross-window read-spanning evidence (no haplotype-tagged BAM). Chains represent DEVIDER per-window output directly.
-              </p>
-            {% endif %}
-            <div class="stat-grid">
-              <div class="stat-card">
-                <div class="stat-value">{{ branch.haplotypes.chains_stitched }}</div>
-                <div class="stat-label">Haplotypes</div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-value">{{ branch.haplotypes.windows_found }}</div>
-                <div class="stat-label">DEVIDER Windows</div>
-              </div>
-              {% if branch.haplotypes.longest_chain_length is not none %}
-              <div class="stat-card">
-                <div class="stat-value">{{ "{:,}".format(branch.haplotypes.longest_chain_length) }} bp</div>
-                <div class="stat-label">Longest Haplotype</div>
-              </div>
+        {% if branch.haplotype_results %}
+          <p style="font-size:12px;color:#555;margin-bottom:8px;">
+            Round 2 simple consensus is the primary result. Round 1 is retained as a reference-sensitivity comparison and is not added to the primary haplotype total.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Reference</th>
+                  <th>Role</th>
+                  <th>Mapped reads</th>
+                  <th>DEVIDER SNP markers</th>
+                  <th>Haplotypes</th>
+                  <th>Length range</th>
+                  <th>Median / max N</th>
+                  <th>Top abundance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for hap in branch.haplotype_results %}
+                <tr>
+                  <td>{{ hap.reference_label }}</td>
+                  <td>{{ "Primary" if hap.primary else "Comparison" }}</td>
+                  <td>
+                    {% if hap.mapping and hap.mapping.primary_mapped is not none %}
+                      {{ "{:,}".format(hap.mapping.primary_mapped) }}
+                      {% if hap.mapping.mapping_rate %} ({{ hap.mapping.mapping_rate }}){% endif %}
+                    {% else %}n/a{% endif %}
+                  </td>
+                  <td>{{ hap.devider_marker_positions if hap.devider_marker_positions is not none else "n/a" }}</td>
+                  <td>{{ hap.chains_stitched }}</td>
+                  <td>
+                    {% if hap.length_min is not none %}
+                      {{ "{:,}".format(hap.length_min) }}–{{ "{:,}".format(hap.length_max) }} bp
+                    {% else %}n/a{% endif %}
+                  </td>
+                  <td>
+                    {% if hap.n_median is not none %}{{ hap.n_median }} / {{ hap.n_max }}{% else %}n/a{% endif %}
+                  </td>
+                  <td>
+                    {% if hap.dominant_abundance is not none %}{{ (hap.dominant_abundance * 100) | round(2) }}%{% else %}n/a{% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          {% set primary_hap = branch.haplotypes %}
+          {% if primary_hap %}
+            <div class="branch-subsection-title" style="margin-top:12px;">Primary haplotypes — {{ primary_hap.reference_label }}</div>
+            {% if primary_hap.fallback_used and not primary_hap.chains %}
+              <p class="empty-state">DEVIDER produced no primary haplotype output for this branch.</p>
+            {% else %}
+              {% if primary_hap.fallback_used %}
+                <p style="font-size:12px;color:#856404;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;padding:4px 8px;margin-bottom:8px;">
+                  Haplotypes shown without cross-window read-spanning evidence (no haplotype-tagged BAM). Chains represent DEVIDER per-window output directly.
+                </p>
               {% endif %}
-            </div>
-            {% if branch.haplotypes.chains %}
-              <div class="branch-subsection-title" style="margin-top:8px;">Haplotypes</div>
-              {% for chain in branch.haplotypes.chains %}
+              {% for chain in primary_hap.chains %}
               <div class="hap-chain">
                 <span class="hap-id">{{ chain.chain_id | default(chain.id) | default("haplotype_" + loop.index0 | string) }}</span>
                 {% set abund = chain.abundance if chain.abundance is defined else chain.abundance_lower_bound %}
-                {% if abund is not none and abund < 1.0 %}
-                  <span class="hap-abundance">Abundance: {{ (abund * 100) | round(2) }}%</span>
-                {% endif %}
+                {% if abund is not none %}<span class="hap-abundance">Abundance: {{ (abund * 100) | round(2) }}%</span>{% endif %}
                 {% set tlen = chain.total_length if chain.total_length is defined else chain.length_bp %}
-                {% if tlen is not none %}
-                  <span class="hap-len">{{ "{:,}".format(tlen) }} bp</span>
-                {% endif %}
+                {% if tlen is not none %}<span class="hap-len">{{ "{:,}".format(tlen) }} bp</span>{% endif %}
+                {% if chain.n_bases is defined and chain.n_bases is not none %}<span class="hap-len">N: {{ chain.n_bases }}</span>{% endif %}
               </div>
               {% endfor %}
-            {% endif %}
-            {% if branch.haplotypes.unlinked_windows %}
-              <p style="font-size:12px;color:#888;margin-top:8px;">
-                {{ branch.haplotypes.unlinked_windows | length }} window junction(s) without spanning read support.
-              </p>
+              {% if primary_hap.unlinked_windows %}
+                <p style="font-size:12px;color:#888;margin-top:8px;">
+                  {{ primary_hap.unlinked_windows | length }} window junction(s) without spanning read support.
+                </p>
+              {% endif %}
             {% endif %}
           {% endif %}
+
+          {% for hap in branch.haplotype_results if not hap.primary %}
+          <details style="margin-top:10px;">
+            <summary>Round 1 comparison haplotypes ({{ hap.chains_stitched }})</summary>
+            <div style="padding-top:8px;">
+              {% if hap.fallback_used and not hap.chains %}
+                <p class="empty-state">DEVIDER produced no Round 1 comparison haplotypes.</p>
+              {% else %}
+                {% for chain in hap.chains %}
+                <div class="hap-chain">
+                  <span class="hap-id">{{ chain.chain_id | default(chain.id) }}</span>
+                  {% set abund = chain.abundance if chain.abundance is defined else chain.abundance_lower_bound %}
+                  {% if abund is not none %}<span class="hap-abundance">Abundance: {{ (abund * 100) | round(2) }}%</span>{% endif %}
+                  {% set tlen = chain.total_length if chain.total_length is defined else chain.length_bp %}
+                  {% if tlen is not none %}<span class="hap-len">{{ "{:,}".format(tlen) }} bp</span>{% endif %}
+                  {% if chain.n_bases is defined and chain.n_bases is not none %}<span class="hap-len">N: {{ chain.n_bases }}</span>{% endif %}
+                </div>
+                {% endfor %}
+                {% if hap.unlinked_windows %}
+                  <p style="font-size:12px;color:#888;margin-top:8px;">
+                    {{ hap.unlinked_windows | length }} window junction(s) without spanning read support.
+                  </p>
+                {% endif %}
+              {% endif %}
+            </div>
+          </details>
+          {% endfor %}
         {% else %}
           <p class="empty-state">Haplotype data not available.</p>
         {% endif %}

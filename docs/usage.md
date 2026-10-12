@@ -282,7 +282,7 @@ To investigate: the `*_divergence.json` file reports `consensus_identity`, `alig
 
 ### DEVIDER fails for a sample
 
-DEVIDER failure is non-fatal. The pipeline emits a `devider.failed` marker in the haplotypes directory, continues to reporting, and notes the failure in the per-sample HTML report. Check the Nextflow `.nextflow.log` and the `work/` directory for the DEVIDER process for the underlying error.
+DEVIDER failure is non-fatal per reference arm. The pipeline retains the other arm when available, continues to reporting, and notes missing haplotypes in the per-sample HTML report. Raw arm outputs are under `haplotypes/<GT>/round2_simple/devider/` and `haplotypes/<GT>/round1/devider/`. Check `.nextflow.log` and the corresponding `work/` directory for the underlying error.
 
 ### Container pull failure
 

@@ -86,7 +86,11 @@ process LOFREQ_CALL {
     conda "${moduleDir}/environment.yml"
 
     publishDir (
-        path: { "${params.outdir}/${meta.id}/variants/${meta.genotype}/" },
+        path: {
+            meta.devider_reference == 'round2_simple'
+                ? "${params.outdir}/${meta.id}/haplotypes/${meta.genotype}/round2_simple/inputs/"
+                : "${params.outdir}/${meta.id}/variants/${meta.genotype}/"
+        },
         mode: 'copy'
     )
 

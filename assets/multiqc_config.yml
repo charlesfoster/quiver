@@ -38,7 +38,7 @@ run_modules:
 module_order:
     - custom_content:
         name: "QuIVER Summary"
-        info: "Per-sample genotype, read funnel, variant count, and haplotype count from the QuIVER pipeline."
+        info: "Per-sample genotype, read funnel, variant count, and primary Round 2 DEVIDER haplotype count from the QuIVER pipeline."
     - nanoplot:
         name: "NanoPlot (raw read quality)"
         info: "Read length and quality metrics from raw ONT reads before filtering."

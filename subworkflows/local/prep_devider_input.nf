@@ -6,7 +6,7 @@
     Purpose:
         Implements Step 5.18 of the data flow specification.  Takes the full-depth
         round 2 BAM produced by MINIMAP2_ROUND2 and chains two modules to produce a
-        DEVIDER-ready BAM at ≤ params.devider_max_depth (default 1,000×):
+        DEVIDER-ready BAM at ≤ params.devider_max_depth (default 5,000×):
 
             1. RASUSA_ALN      — depth-accurate subsampling of the full-depth BAM
                                  using `rasusa aln`, which calculates coverage from
@@ -25,9 +25,9 @@
     Why subsample before DEVIDER (CLAUDE.md D10, D11, docs/architecture_reasoning.md §9):
         DEVIDER's memory usage scales super-linearly with depth.  Benchmarks show
         stable behaviour at 100–2,000×; above that, memory can exhaust even 64 GB
-        nodes.  The 1,000× cap is deliberately lower than the LoFreq cap (5,000×)
-        because DEVIDER's windowed phasing algorithm does not gain sensitivity from
-        additional depth once windows are well-covered.
+        nodes. The 5,000× default matches the LoFreq cap and can be lowered for
+        constrained systems because DEVIDER's windowed phasing algorithm gains
+        little sensitivity once windows are well-covered.
         The full-depth BAM is preserved in the main workflow for coverage QC and
         reporting.
 

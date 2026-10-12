@@ -35,6 +35,7 @@ dependencies:
   # Variant calling
   - bioconda::lofreq=2.1.5
   - bioconda::clair3=1.0.10
+  - bioconda::devider=0.1.0=hb42e459_0
 
   # QC aggregation
   - bioconda::multiqc=1.25.1
@@ -44,6 +45,3 @@ dependencies:
 
   # Python BAM parsing
   - bioconda::pysam=0.22.1
-
-  # NOTE: DEVIDER v0.0.1 has no bioconda package; use the biocontainer
-  # quay.io/biocontainers/devider:0.0.1--ha6fb395_3 for containerised runs.

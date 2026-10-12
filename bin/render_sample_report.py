@@ -54,6 +54,7 @@ import re
 import sys
 from datetime import date
 from pathlib import Path
+from statistics import median
 from typing import Any
 
 # ---------------------------------------------------------------------------
@@ -298,6 +299,9 @@ def parse_haplotype_report(path: Path | None) -> dict | None:
     if d is None:
         return None
     longest = None
+    lengths: list[int] = []
+    n_counts: list[int] = []
+    abundances: list[float] = []
     for chain in d.get("chains", []):
         # Add template aliases (setdefault preserves any already-correct keys).
         chain.setdefault("chain_id",     chain.get("id"))
@@ -307,7 +311,29 @@ def parse_haplotype_report(path: Path | None) -> dict | None:
         tlen = chain.get("length_bp")
         if tlen is not None:
             longest = max(longest, tlen) if longest is not None else tlen
+            lengths.append(int(tlen))
+        n_bases = chain.get("n_bases")
+        if n_bases is not None:
+            n_counts.append(int(n_bases))
+        abundance = chain.get("abundance_lower_bound")
+        if abundance is None:
+            abundance = chain.get("abundance")
+        if abundance is not None:
+            abundances.append(float(abundance))
     d["longest_chain_length"] = longest
+    legacy_unlabelled = "reference_arm" not in d
+    d.setdefault("reference_arm", "round1")
+    d.setdefault(
+        "reference_label",
+        "Round 2 simple consensus" if d["reference_arm"] == "round2_simple"
+        else "Round 1 consensus",
+    )
+    d.setdefault("primary", legacy_unlabelled or d["reference_arm"] == "round2_simple")
+    d["length_min"] = min(lengths) if lengths else None
+    d["length_max"] = max(lengths) if lengths else None
+    d["n_median"] = median(n_counts) if n_counts else None
+    d["n_max"] = max(n_counts) if n_counts else None
+    d["dominant_abundance"] = max(abundances) if abundances else None
     return d
 
 
@@ -577,11 +603,40 @@ def build_context(args: argparse.Namespace) -> dict:
                 result[gt] = p
         return result
 
+    def _index_flagstats(paths: list[str] | None) -> tuple[dict[str, Path], dict[str, Path]]:
+        """Return standard and Round 2 simple DEVIDER flagstats by genotype."""
+        standard: dict[str, Path] = {}
+        round2_simple: dict[str, Path] = {}
+        for p_str in paths or []:
+            p = Path(p_str)
+            if not p.exists():
+                continue
+            gt = _extract_genotype_from_filename(p.name, sample_id)
+            if not gt:
+                continue
+            target = round2_simple if "_round2_simple_devider.flagstat" in p.name else standard
+            target[gt] = p
+        return standard, round2_simple
+
+    def _index_haplotype_reports(paths: list[str] | None) -> dict[str, dict[str, dict]]:
+        """Map genotype -> reference arm -> parsed haplotype report."""
+        result: dict[str, dict[str, dict]] = {}
+        for p_str in paths or []:
+            p = Path(p_str)
+            if not p.exists():
+                continue
+            gt = _extract_genotype_from_filename(p.name, sample_id)
+            report = parse_haplotype_report(p)
+            if gt and report:
+                arm = report.get("reference_arm") or "round1"
+                result.setdefault(gt, {})[arm] = report
+        return result
+
     mosdepth_by_gt  = _index_files(args.mosdepth_summaries)
     mosdepth_bed_by_gt = _index_files(args.mosdepth_beds)
     variants_by_gt  = _index_files(args.variant_tsvs)
-    flagstat_by_gt  = _index_files(args.flagstats)
-    haplotype_by_gt = _index_files(args.haplotype_reports)
+    flagstat_by_gt, round2_devider_flagstat_by_gt = _index_flagstats(args.flagstats)
+    haplotype_by_gt = _index_haplotype_reports(args.haplotype_reports)
 
     # Collect all distinct genotype keys from all input files + branches_to_run
     all_gt_keys: set[str] = set(branches_to_run)
@@ -607,8 +662,31 @@ def build_context(args: argparse.Namespace) -> dict:
         # Flagstat
         flagstat_data = parse_flagstat(flagstat_by_gt.get(gt))
 
-        # Haplotypes
-        stitch_data = parse_haplotype_report(haplotype_by_gt.get(gt))
+        # Haplotypes. Round 2 simple is primary whenever available; Round 1
+        # remains a separately labelled reference-sensitivity comparison.
+        haplotypes_by_reference = haplotype_by_gt.get(gt, {})
+        for arm_name, arm_data in haplotypes_by_reference.items():
+            mapping_path = (
+                round2_devider_flagstat_by_gt.get(gt)
+                if arm_name == "round2_simple"
+                else flagstat_by_gt.get(gt)
+            )
+            arm_data["mapping"] = parse_flagstat(mapping_path)
+
+        stitch_data = haplotypes_by_reference.get("round2_simple")
+        if stitch_data is None:
+            stitch_data = next(
+                (h for h in haplotypes_by_reference.values() if h.get("primary")),
+                None,
+            )
+        if stitch_data is None and haplotypes_by_reference:
+            stitch_data = next(iter(haplotypes_by_reference.values()))
+
+        haplotype_results = [
+            haplotypes_by_reference[arm]
+            for arm in ("round2_simple", "round1")
+            if arm in haplotypes_by_reference
+        ]
 
         coverage_mean  = mosdepth_data["mean"] if mosdepth_data else None
         variant_count  = len(variant_data) if variant_data is not None else None
@@ -624,6 +702,11 @@ def build_context(args: argparse.Namespace) -> dict:
             "flagstat":       flagstat_data,
             "haplotypes":     stitch_data,
             "haplotype_count": haplotype_count,
+            "primary_haplotype_reference": (
+                stitch_data.get("reference_arm") if stitch_data else None
+            ),
+            "haplotypes_by_reference": haplotypes_by_reference,
+            "haplotype_results": haplotype_results,
         })
 
     # ---- NanoPlot images ----
@@ -650,6 +733,7 @@ def build_context(args: argparse.Namespace) -> dict:
         "sample_id":         sample_id,
         "run_date":          run_date,
         "pipeline_version":  pipeline_version,
+        "primary_haplotype_reference": "round2_simple",
         "overall_status":    overall_status,
         "is_mixed":          is_mixed,
         "primary_genotype":  primary_genotype,
@@ -674,23 +758,32 @@ def build_json_summary(context: dict) -> dict:
         cov_out: dict | None = None
         if cov is not None:
             cov_out = {k: v for k, v in cov.items() if k not in ("regions", "svg")}
-        hap = b.get("haplotypes")
-        hap_out: dict | None = None
-        if hap is not None:
-            hap_out = {
-                k: v for k, v in hap.items()
-                if k not in ("chains",)
-            }
-            # Include minimal chain summaries
+        def serialise_haplotypes(hap: dict | None) -> dict | None:
+            if hap is None:
+                return None
+            hap_out = {k: v for k, v in hap.items() if k not in ("chains",)}
             hap_out["chains"] = [
                 {
-                    "chain_id":    c.get("id") or c.get("chain_id"),
-                    "abundance":   c.get("abundance_lower_bound") or c.get("abundance"),
+                    "chain_id": c.get("id") or c.get("chain_id"),
+                    "abundance": (
+                        c.get("abundance_lower_bound")
+                        if c.get("abundance_lower_bound") is not None
+                        else c.get("abundance")
+                    ),
                     "total_length": c.get("length_bp") or c.get("total_length"),
-                    "n_windows":   len(c.get("windows") or []) or c.get("n_windows"),
+                    "n_bases": c.get("n_bases"),
+                    "n_windows": len(c.get("windows") or []) or c.get("n_windows"),
                 }
                 for c in (hap.get("chains") or [])
             ]
+            return hap_out
+
+        hap = b.get("haplotypes")
+        hap_out = serialise_haplotypes(hap)
+        haplotypes_by_reference_out = {
+            arm: serialise_haplotypes(arm_data)
+            for arm, arm_data in (b.get("haplotypes_by_reference") or {}).items()
+        }
 
         # variants: include count and first 20 by AF
         variants = b.get("variants") or []
@@ -705,12 +798,15 @@ def build_json_summary(context: dict) -> dict:
             "variants_top20":  variants_sorted[:20],
             "haplotype_count": b.get("haplotype_count"),
             "haplotypes":      hap_out,
+            "primary_haplotype_reference": b.get("primary_haplotype_reference"),
+            "haplotypes_by_reference": haplotypes_by_reference_out,
         })
 
     return {
         "sample_id":         context["sample_id"],
         "run_date":          context["run_date"],
         "pipeline_version":  context["pipeline_version"],
+        "primary_haplotype_reference": context["primary_haplotype_reference"],
         "overall_status":    context["overall_status"],
         "is_mixed":          context["is_mixed"],
         "primary_genotype":  context["primary_genotype"],
@@ -855,7 +951,7 @@ _BRANCH_MQC_HEADER = """\
 #       scale: 'Oranges'
 #   - haplotype_count:
 #       title: 'Haplotypes'
-#       description: 'Reconstructed haplotypes from DEVIDER'
+#       description: 'Primary DEVIDER haplotypes using the Round 2 simple consensus'
 #       format: '{:,.0f}'
 #       min: 0
 #       scale: 'Purples'

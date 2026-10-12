@@ -393,7 +393,7 @@ details.params-details > summary:hover {{ text-decoration: underline; }}
           <th>Mixed?</th>
           <th>Mean Coverage</th>
           <th>Variants Called</th>
-          <th>Haplotypes</th>
+          <th title="DEVIDER haplotypes reconstructed using the Round 2 simple consensus">Primary haplotypes</th>
           <th>Flags</th>
           <th>Report</th>
         </tr>

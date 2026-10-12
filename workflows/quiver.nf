@@ -24,9 +24,11 @@
                     -> PREP_LOFREQ_INPUT
                         -> LOFREQ_CALL -> VARIANT_FILTER
                         -> (optional) CLAIR3 + concordance
-                    -> PREP_DEVIDER_INPUT
-                        -> DEVIDER (gated by LOW_COVERAGE)
-                        -> FORMAT_HAPLOTYPES
+                    -> DEVIDER Round 1 comparison (gated by LOW_COVERAGE)
+                    -> BUILD_ROUND2_CONSENSUS
+                        -> remap + matched LoFreq VCF
+                        -> DEVIDER Round 2 simple (primary)
+                        -> FORMAT_HAPLOTYPES for both arms
                 |
                 v
             groupTuple(by: 0) on meta.id  ── per-sample collapse
@@ -74,17 +76,26 @@ include { GENOTYPE_CLASSIFY        } from '../modules/local/genotype_classify/ma
 include { GENOTYPE_BRANCH          } from '../subworkflows/local/genotype_branch'
 include { BUILD_CONSENSUS          } from '../subworkflows/local/build_consensus'
 include { MINIMAP2_ROUND2          } from '../modules/local/minimap2_round2/main'
+include { MINIMAP2_ROUND2 as MINIMAP2_ROUND2_DEVIDER } from '../modules/local/minimap2_round2/main'
 include { MOSDEPTH                 } from '../modules/local/mosdepth/main'
 include { PREP_LOFREQ_INPUT        } from '../subworkflows/local/prep_lofreq_input'
+include { PREP_LOFREQ_INPUT as PREP_LOFREQ_INPUT_ROUND2_DEVIDER } from '../subworkflows/local/prep_lofreq_input'
 include { LOFREQ_CALL              } from '../modules/local/lofreq_call/main'
+include { LOFREQ_CALL as LOFREQ_CALL_ROUND2_DEVIDER } from '../modules/local/lofreq_call/main'
 include { VARIANT_FILTER           } from '../modules/local/variant_filter/main'
+include { VARIANT_FILTER as VARIANT_FILTER_ROUND2_DEVIDER } from '../modules/local/variant_filter/main'
 include { CLAIR3                   } from '../modules/local/clair3/main'
 include { PREP_DEVIDER_INPUT       } from '../subworkflows/local/prep_devider_input'
+include { PREP_DEVIDER_INPUT as PREP_DEVIDER_INPUT_ROUND2_DEVIDER } from '../subworkflows/local/prep_devider_input'
 include { FILTER_VCF_FOR_DEVIDER   } from '../modules/local/filter_vcf_for_devider/main'
+include { FILTER_VCF_FOR_DEVIDER as FILTER_VCF_FOR_DEVIDER_ROUND2 } from '../modules/local/filter_vcf_for_devider/main'
 include { DEVIDER                  } from '../modules/local/devider/main'
+include { DEVIDER as DEVIDER_ROUND2 } from '../modules/local/devider/main'
 include { FORMAT_HAPLOTYPES        } from '../modules/local/format_haplotypes/main'
+include { FORMAT_HAPLOTYPES as FORMAT_HAPLOTYPES_ROUND2 } from '../modules/local/format_haplotypes/main'
 include { MAKE_ROUND2_MASK         } from '../modules/local/make_round2_mask/main'
 include { BUILD_ROUND2_CONSENSUS   } from '../modules/local/build_round2_consensus/main'
+include { INDEX_CONSENSUS as INDEX_ROUND2_DEVIDER_REFERENCE } from '../modules/local/index_consensus/main'
 include { SAMPLE_REPORT            } from '../modules/local/sample_report/main'
 include { MULTIQC                  } from '../modules/local/multiqc/main'
 
@@ -606,14 +617,15 @@ workflow QUIVER {
 
 
     // =====================================================================
-    // Step 5.16b — Round 2 consensus (published output only)
+    // Step 5.16b — Round 2 consensus
     //
     // Uses the full-depth Round 2 BAM for coverage masking and the LoFreq
     // filtered VCF to generate two consensus FASTAs per branch:
     //   *_round2_consensus_simple.fasta — majority-allele (AF >= 0.5)
     //   *_round2_consensus_iupac.fasta  — IUPAC codes at AF < 0.5 sites
-    // These are published under consensus/${GT}/ and do not feed back
-    // into any downstream pipeline step.
+    // Both are published under consensus/${GT}/. The simple consensus also
+    // becomes the primary DEVIDER reference below; the IUPAC consensus remains
+    // a published interpretation artifact.
     // =====================================================================
     MAKE_ROUND2_MASK(MINIMAP2_ROUND2.out.bam)
     ch_versions = ch_versions.mix(MAKE_ROUND2_MASK.out.versions)
@@ -658,10 +670,18 @@ workflow QUIVER {
 
 
     // =====================================================================
-    // Steps 5.18–5.20 — DEVIDER prep, run, stitch
+    // Steps 5.18–5.20 — DEVIDER against both consensus references
     //
-    // LOW_COVERAGE branches skip DEVIDER but keep LoFreq.
+    // Round 2 simple is the primary haplotype result. Round 1 is retained as
+    // a reference-sensitivity comparison. Each arm has a coordinate-matched
+    // reference, BAM and LoFreq VCF. LOW_COVERAGE branches skip both DEVIDER
+    // invocations but keep the standard LoFreq analysis above.
     // =====================================================================
+
+    // ---------------------------------------------------------------------
+    // Round 1 consensus comparison arm. This reuses the standard Round 2
+    // mapping and LoFreq VCF, which are both in Round 1 consensus coordinates.
+    // ---------------------------------------------------------------------
     PREP_DEVIDER_INPUT(ch_prep_lofreq_input)  // [meta, bam, bai, consensus_fasta] — same shape as LoFreq prep
     ch_versions = ch_versions.mix(PREP_DEVIDER_INPUT.out.versions)
 
@@ -699,14 +719,104 @@ workflow QUIVER {
 
     ch_devider_run_input = ch_devider_assembled.adequate
         .map { key, meta, bam, bai, vcf, tbi, fasta, low_cov ->
-            tuple(meta, bam, bai, vcf, tbi, fasta)
+            def arm_meta = meta + [
+                devider_reference: 'round1',
+                devider_primary: false,
+            ]
+            tuple(arm_meta, bam, bai, vcf, tbi, fasta)
         }
+
+    ch_devider_adequate_keys = ch_devider_assembled.adequate
+        .map { key, meta, bam, bai, vcf, tbi, fasta, low_cov -> tuple(key, true) }
 
     DEVIDER(ch_devider_run_input)
     ch_versions = ch_versions.mix(DEVIDER.out.versions)
 
     FORMAT_HAPLOTYPES(DEVIDER.out.outdir)
     ch_versions = ch_versions.mix(FORMAT_HAPLOTYPES.out.versions)
+
+    // ---------------------------------------------------------------------
+    // Round 2 simple consensus primary arm. Remap the same branch reads to
+    // the Round 2 simple consensus, then make a new coordinate-matched LoFreq
+    // VCF and DEVIDER BAM before running DEVIDER.
+    // ---------------------------------------------------------------------
+    ch_round2_devider_reference = BUILD_ROUND2_CONSENSUS.out.consensus
+        .map { meta, simple_fasta, iupac_fasta ->
+            def arm_meta = meta + [
+                devider_reference: 'round2_simple',
+                devider_primary: true,
+            ]
+            tuple([meta.id, meta.genotype], arm_meta, simple_fasta)
+        }
+        .join(ch_devider_adequate_keys, by: 0)
+        .map { key, meta, simple_fasta, adequate -> tuple(meta, simple_fasta) }
+
+    INDEX_ROUND2_DEVIDER_REFERENCE(ch_round2_devider_reference)
+    ch_versions = ch_versions.mix(INDEX_ROUND2_DEVIDER_REFERENCE.out.versions)
+
+    ch_round2_devider_ref_keyed = INDEX_ROUND2_DEVIDER_REFERENCE.out.consensus
+        .map { meta, fasta, fai, mmi ->
+            tuple([meta.id, meta.genotype], meta, fasta, fai, mmi)
+        }
+
+    ch_round2_devider_map_input = ch_round2_devider_ref_keyed
+        .join(ch_branch_reads_keyed, by: 0)
+        .map { key, meta, fasta, fai, mmi, reads ->
+            tuple(meta, fasta, fai, mmi, reads)
+        }
+
+    MINIMAP2_ROUND2_DEVIDER(ch_round2_devider_map_input)
+    ch_versions = ch_versions.mix(MINIMAP2_ROUND2_DEVIDER.out.versions)
+
+    ch_round2_devider_ref_fasta = INDEX_ROUND2_DEVIDER_REFERENCE.out.consensus
+        .map { meta, fasta, fai, mmi -> tuple([meta.id, meta.genotype], fasta) }
+
+    ch_round2_devider_bam_keyed = MINIMAP2_ROUND2_DEVIDER.out.bam
+        .map { meta, bam, bai -> tuple([meta.id, meta.genotype], meta, bam, bai) }
+
+    ch_round2_devider_prep_input = ch_round2_devider_bam_keyed
+        .join(ch_round2_devider_ref_fasta, by: 0)
+        .map { key, meta, bam, bai, fasta -> tuple(meta, bam, bai, fasta) }
+
+    PREP_LOFREQ_INPUT_ROUND2_DEVIDER(ch_round2_devider_prep_input)
+    PREP_DEVIDER_INPUT_ROUND2_DEVIDER(ch_round2_devider_prep_input)
+    ch_versions = ch_versions
+        .mix(PREP_LOFREQ_INPUT_ROUND2_DEVIDER.out.versions)
+        .mix(PREP_DEVIDER_INPUT_ROUND2_DEVIDER.out.versions)
+
+    ch_round2_lofreq_bam_keyed = PREP_LOFREQ_INPUT_ROUND2_DEVIDER.out.lofreq_bam
+        .map { meta, bam, bai -> tuple([meta.id, meta.genotype], meta, bam, bai) }
+
+    ch_round2_lofreq_call_input = ch_round2_lofreq_bam_keyed
+        .join(ch_round2_devider_ref_fasta, by: 0)
+        .map { key, meta, bam, bai, fasta -> tuple(meta, bam, bai, fasta) }
+
+    LOFREQ_CALL_ROUND2_DEVIDER(ch_round2_lofreq_call_input)
+    VARIANT_FILTER_ROUND2_DEVIDER(LOFREQ_CALL_ROUND2_DEVIDER.out.vcf)
+    FILTER_VCF_FOR_DEVIDER_ROUND2(VARIANT_FILTER_ROUND2_DEVIDER.out.vcf)
+    ch_versions = ch_versions
+        .mix(LOFREQ_CALL_ROUND2_DEVIDER.out.versions)
+        .mix(VARIANT_FILTER_ROUND2_DEVIDER.out.versions)
+        .mix(FILTER_VCF_FOR_DEVIDER_ROUND2.out.versions)
+
+    ch_round2_devider_ready_bam = PREP_DEVIDER_INPUT_ROUND2_DEVIDER.out.devider_bam
+        .map { meta, bam, bai -> tuple([meta.id, meta.genotype], meta, bam, bai) }
+
+    ch_round2_devider_vcf = FILTER_VCF_FOR_DEVIDER_ROUND2.out.vcf
+        .map { meta, vcf, tbi -> tuple([meta.id, meta.genotype], vcf, tbi) }
+
+    ch_round2_devider_run_input = ch_round2_devider_ready_bam
+        .join(ch_round2_devider_vcf, by: 0)
+        .join(ch_round2_devider_ref_fasta, by: 0)
+        .map { key, meta, bam, bai, vcf, tbi, fasta ->
+            tuple(meta, bam, bai, vcf, tbi, fasta)
+        }
+
+    DEVIDER_ROUND2(ch_round2_devider_run_input)
+    ch_versions = ch_versions.mix(DEVIDER_ROUND2.out.versions)
+
+    FORMAT_HAPLOTYPES_ROUND2(DEVIDER_ROUND2.out.outdir)
+    ch_versions = ch_versions.mix(FORMAT_HAPLOTYPES_ROUND2.out.versions)
 
 
     // =====================================================================
@@ -736,10 +846,12 @@ workflow QUIVER {
         .groupTuple(by: 0)
 
     ch_flagstat_by_sample = MINIMAP2_ROUND2.out.flagstat
+        .mix(MINIMAP2_ROUND2_DEVIDER.out.flagstat)
         .map { meta, f -> tuple(meta.id, f) }
         .groupTuple(by: 0)
 
     ch_haplotype_report_by_sample = FORMAT_HAPLOTYPES.out.report
+        .mix(FORMAT_HAPLOTYPES_ROUND2.out.report)
         .map { meta, f -> tuple(meta.id, f) }
         .groupTuple(by: 0)
 

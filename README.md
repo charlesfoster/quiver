@@ -143,7 +143,7 @@ results/
     consensus/<GT>/
     mapping/<GT>/
     variants/<GT>/
-    haplotypes/<GT>/
+    haplotypes/<GT>/            # Round 2 primary FASTA, Round 1 comparison, raw arm outputs
     reports/
     reads/
   pipeline_info/
@@ -162,6 +162,8 @@ Description of every output file: [docs/output.md](docs/output.md).
 | [docs/parameters.md](docs/parameters.md) | Full parameter reference |
 | [docs/important_considerations.md](docs/important_considerations.md) | DEVIDER haplotype recovery: read length, SNP density, error rates, tuning |
 | [docs/output.md](docs/output.md) | Output file descriptions |
+| [docs/consensus_genomes.md](docs/consensus_genomes.md) | Choosing among consensus and haplotype FASTAs |
+| [docs/devider_reference_comparisons.md](docs/devider_reference_comparisons.md) | Evidence behind the dual-reference DEVIDER design |
 | [docs/configuration.md](docs/configuration.md) | Config defaults, samplesheet schema, compute profiles |
 | [docs/data_flow.md](docs/data_flow.md) | Step-by-step data flow with exact commands |
 | [docs/testing.md](docs/testing.md) | Testing and validation strategy |

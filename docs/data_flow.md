@@ -185,24 +185,27 @@
 - **Model:** `r1041_e82_400bps_hac_v520`
 - **Resources:** 16 CPU, 32 GB, 60 min.
 
-## Step 5.18 — rasusa subsample for DEVIDER
-- **Module:** `RASUSA_DEVIDER`
-- **Output:** `devider_input.fastq.gz` → remapped → `devider.bam`
-- **Command:**
-  ```
-  rasusa reads --coverage ${params.devider_max_depth} --genome-size 9646 \
-    --seed 43 -o devider_input.fastq.gz ${reads}
-  minimap2 -ax map-ont -t ${task.cpus} -Y --MD --eqx ${consensus_mmi} devider_input.fastq.gz \
-    | samtools sort -@ ${task.cpus} -O bam -o devider.bam -
-  samtools index devider.bam
-  ```
-- **Resources:** 8 CPU, 16 GB, 30 min.
+## Step 5.18 — Prepare the two DEVIDER reference arms
+- **Round 2 simple (primary):** index the Round 2 simple consensus, remap the
+  genotype-assigned reads to it, make a coordinate-matched LoFreq VCF, and
+  depth-cap/preprocess a coordinate-matched DEVIDER BAM.
+- **Round 1 (comparison):** reuse the standard BAM and LoFreq VCF generated
+  against the Round 1 sample consensus, then depth-cap/preprocess the DEVIDER
+  BAM independently.
+- **Invariant:** each DEVIDER invocation receives a FASTA, BAM, and VCF in the
+  same reference coordinate system. Files from the two arms must not be mixed.
+- **Subsampling:** `PREP_DEVIDER_INPUT` filters short reads and uses
+  `rasusa aln` with `params.devider_max_depth` and seed 43.
+- **Resources:** the extra cost is primarily the Round 2 simple remapping and
+  LoFreq call; DEVIDER itself remains depth capped.
 
 ## Step 5.19 — DEVIDER haplotype reconstruction
-- **Module:** `DEVIDER_RUN`
-- **Input:** `devider.bam`, `${GT}.consensus.fasta`, `lofreq.filtered.vcf.gz` (DEVIDER phases SNPs from this VCF; it does not call variants itself)
-- **Output:** `haplotypes/${GT}/devider/` — parse by directory listing, not hard-coded filenames
-- **Command (DEVIDER v0.0.1 — verify flags against `devider --help` at implementation time):**
+- **Module:** `DEVIDER`
+- **Input:** coordinate-matched `devider.bam`, consensus FASTA, and filtered
+  LoFreq VCF for each reference arm. DEVIDER phases SNPs from the VCF; it does
+  not call variants itself.
+- **Output:** `haplotypes/${GT}/{round2_simple,round1}/devider/`.
+- **Command (DEVIDER v0.1.0):**
   ```
   devider \
     -b devider.bam \
@@ -222,19 +225,28 @@
   - `-O` overwrites output dir (required for Nextflow work-dir reruns).
   - `--output-reads` emits the haplotype-tagged BAM needed by Step 5.20.
   - `--allele-output` writes nucleotide alleles (not 0/1 codes); required by stitching/reporting scripts.
-  - v0.0.1 has **no `--merge-windows` flag** — cross-region stitching is Step 5.20.
+  - Cross-region stitching is Step 5.20.
 - **Resources:** 16 CPU, 64 GB, 4 hours (worst case).
 - **Fail (graceful):** Non-zero exit → emit empty dir + `devider.failed`; do not fail the sample.
 
 ## Step 5.20 — Haplotype formatting
 - **Module:** `FORMAT_HAPLOTYPES` (`bin/format_haplotypes.py`)
-- **Output:** `haplotypes/${GT}/<sid>_<GT>_haplotypes.fasta`, `<sid>_<GT>_haplotype_map.tsv`, `<sid>_<GT>_haplotype_report.json`
-- **Logic:** Sort DEVIDER haplotypes by abundance (highest first), assign clean sequential IDs, annotate FASTA headers with abundance/depth/length, and write a TSV mapping new IDs back to DEVIDER's original headers. Gracefully handles DEVIDER failure by emitting empty outputs.
+- **Primary output:** `haplotypes/${GT}/<sid>_<GT>_haplotypes.fasta` from the
+  Round 2 simple consensus arm.
+- **Comparison output:**
+  `haplotypes/${GT}/<sid>_<GT>_round1_comparison_haplotypes.fasta`.
+- **Logic:** sort each arm independently by abundance, assign non-colliding
+  sequence IDs, annotate headers with abundance/depth/length, and write an arm
+  labelled JSON report and TSV mapping. Gracefully handles failure per arm.
 - **Resources:** 4 CPU, 8 GB, 30 min.
 
 ## Step 5.21 — Per-sample report
 - **Module:** `SAMPLE_REPORT` (`bin/render_sample_report.py` + Jinja2)
 - **Output:** `reports/${SID}_summary.html`, `reports/${SID}_summary.json`
+- **Haplotypes:** the Round 2 simple arm supplies the headline count, main
+  haplotype list, run summary, and MultiQC value. The Round 1 arm appears as a
+  separately labelled expandable comparison and is never added to the primary
+  total.
 - **Resources:** 1 CPU, 2 GB, 5 min.
 
 ## Step 5.22 — MultiQC aggregation

@@ -64,7 +64,11 @@ process MINIMAP2_ROUND2 {
     conda "${moduleDir}/environment.yml"
 
     publishDir (
-        path: { "${params.outdir}/${meta.id}/mapping/${meta.genotype}/" },
+        path: {
+            meta.devider_reference == 'round2_simple'
+                ? "${params.outdir}/${meta.id}/haplotypes/${meta.genotype}/round2_simple/inputs/"
+                : "${params.outdir}/${meta.id}/mapping/${meta.genotype}/"
+        },
         mode: 'copy'
     )
 
@@ -77,19 +81,21 @@ process MINIMAP2_ROUND2 {
 
     output:
     tuple val(meta),
-          path("${meta.id}_${meta.genotype}_round2.bam"),
-          path("${meta.id}_${meta.genotype}_round2.bam.bai"),
+          path("${meta.id}_${meta.genotype}_${meta.devider_reference == 'round2_simple' ? 'round2_simple_devider' : 'round2'}.bam"),
+          path("${meta.id}_${meta.genotype}_${meta.devider_reference == 'round2_simple' ? 'round2_simple_devider' : 'round2'}.bam.bai"),
           emit: bam
     tuple val(meta),
-          path("${meta.id}_${meta.genotype}_round2.flagstat"),
+          path("${meta.id}_${meta.genotype}_${meta.devider_reference == 'round2_simple' ? 'round2_simple_devider' : 'round2'}.flagstat"),
           emit: flagstat
     tuple val(meta),
-          path("${meta.id}_${meta.genotype}.LOW_MAPPING_RATE"),
+          path("${meta.id}_${meta.genotype}${meta.devider_reference == 'round2_simple' ? '.round2_simple_devider' : ''}.LOW_MAPPING_RATE"),
           optional: true,
           emit: low_rate_flag
     path "versions.yml", emit: versions
 
     script:
+    def output_stem = "${meta.id}_${meta.genotype}_${meta.devider_reference == 'round2_simple' ? 'round2_simple_devider' : 'round2'}"
+    def low_rate_name = "${meta.id}_${meta.genotype}${meta.devider_reference == 'round2_simple' ? '.round2_simple_devider' : ''}.LOW_MAPPING_RATE"
     """
     # ----------------------------------------------------------------
     # Round 2 mapping — single-reference, per-genotype consensus.
@@ -119,21 +125,21 @@ process MINIMAP2_ROUND2 {
     | samtools sort \\
         -@ ${task.cpus} \\
         -O bam \\
-        -o ${meta.id}_${meta.genotype}_round2.bam \\
+        -o ${output_stem}.bam \\
         -
 
     # ----------------------------------------------------------------
     # Index the sorted BAM.
     # ----------------------------------------------------------------
-    samtools index -@ ${task.cpus} ${meta.id}_${meta.genotype}_round2.bam
+    samtools index -@ ${task.cpus} ${output_stem}.bam
 
     # ----------------------------------------------------------------
     # Flagstat — written to file for MultiQC and the mapping-rate gate.
     # ----------------------------------------------------------------
     samtools flagstat \\
         -@ ${task.cpus} \\
-        ${meta.id}_${meta.genotype}_round2.bam \\
-        > ${meta.id}_${meta.genotype}_round2.flagstat
+        ${output_stem}.bam \\
+        > ${output_stem}.flagstat
 
     # ----------------------------------------------------------------
     # Mapping-rate gate.
@@ -147,8 +153,8 @@ process MINIMAP2_ROUND2 {
     #   "N + 0 primary mapped ..."  — primary reads that mapped
     #   "N + 0 primary"             — all primary reads (total)
     # ----------------------------------------------------------------
-    mapped=\$(grep "primary mapped" ${meta.id}_${meta.genotype}_round2.flagstat | awk '{print \$1}')
-    total=\$(grep -E "^[0-9]+ \\+ [0-9]+ primary\$" ${meta.id}_${meta.genotype}_round2.flagstat | awk '{print \$1}')
+    mapped=\$(grep "primary mapped" ${output_stem}.flagstat | awk '{print \$1}')
+    total=\$(grep -E "^[0-9]+ \\+ [0-9]+ primary\$" ${output_stem}.flagstat | awk '{print \$1}')
 
     if [ "\${total}" -gt 0 ]; then
         pct=\$(python3 -c "print(int(100 * \${mapped} / \${total}))" 2>/dev/null || echo 0)
@@ -158,7 +164,7 @@ process MINIMAP2_ROUND2 {
 
     if [ "\${pct}" -lt 90 ]; then
         echo "WARNING: Only \${pct}% of primary reads mapped in Round 2 for sample ${meta.id} genotype ${meta.genotype} (threshold: 90%). Emitting LOW_MAPPING_RATE sentinel." >&2
-        touch ${meta.id}_${meta.genotype}.LOW_MAPPING_RATE
+        touch ${low_rate_name}
     fi
 
     cat <<-END_VERSIONS > versions.yml
@@ -169,12 +175,14 @@ process MINIMAP2_ROUND2 {
     """
 
     stub:
+    def output_stem_s = "${meta.id}_${meta.genotype}_${meta.devider_reference == 'round2_simple' ? 'round2_simple_devider' : 'round2'}"
+    def low_rate_name_s = "${meta.id}_${meta.genotype}${meta.devider_reference == 'round2_simple' ? '.round2_simple_devider' : ''}.LOW_MAPPING_RATE"
     """
-    touch ${meta.id}_${meta.genotype}_round2.bam
-    touch ${meta.id}_${meta.genotype}_round2.bam.bai
+    touch ${output_stem_s}.bam
+    touch ${output_stem_s}.bam.bai
     printf "0 + 0 in total (QC-passed reads + QC-failed reads)\\n0 + 0 primary\\n0 + 0 secondary\\n0 + 0 supplementary\\n0 + 0 duplicates\\n0 + 0 primary mapped (0.00%% : N/A)\\n" \\
-        > ${meta.id}_${meta.genotype}_round2.flagstat
-    touch ${meta.id}_${meta.genotype}.LOW_MAPPING_RATE
+        > ${output_stem_s}.flagstat
+    touch ${low_rate_name_s}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

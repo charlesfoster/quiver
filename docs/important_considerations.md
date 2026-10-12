@@ -223,7 +223,8 @@ nextflow run main.nf -profile docker --input samplesheet.csv \
    limiting factor. If no haplotypes at all are reported, the collapse has occurred
    at the graph level (points 1–3 above), not at the abundance filter.
 
-5. **Inspect the DEVIDER output directory directly.**
-   `haplotypes/<GT>/devider/` contains DEVIDER's raw output. The presence of a
-   `devider.failed` marker file indicates DEVIDER exited non-zero; check
+5. **Inspect the DEVIDER output directories directly.**
+   `haplotypes/<GT>/round2_simple/devider/` contains the primary raw output and
+   `haplotypes/<GT>/round1/devider/` contains the comparison. A `devider.failed`
+   marker indicates that arm exited non-zero; check
    `.nextflow.log` and the corresponding `work/` subdirectory for the error message.

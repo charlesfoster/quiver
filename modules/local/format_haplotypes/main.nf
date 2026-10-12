@@ -69,25 +69,34 @@ process FORMAT_HAPLOTYPES {
 
     output:
     tuple val(meta),
-          path("${meta.id}_${meta.genotype}_haplotypes.fasta"),
+          path("${meta.id}_${meta.genotype}${meta.devider_reference == 'round1' ? '_round1_comparison' : ''}_haplotypes.fasta"),
           emit: haplotypes
     tuple val(meta),
-          path("${meta.id}_${meta.genotype}_haplotype_map.tsv"),
+          path("${meta.id}_${meta.genotype}${meta.devider_reference == 'round1' ? '_round1_comparison' : ''}_haplotype_map.tsv"),
           emit: mapping
     tuple val(meta),
-          path("${meta.id}_${meta.genotype}_haplotype_report.json"),
+          path("${meta.id}_${meta.genotype}${meta.devider_reference == 'round1' ? '_round1_comparison' : ''}_haplotype_report.json"),
           emit: report
     path "versions.yml", emit: versions
 
     script:
+    def output_prefix = "${meta.id}_${meta.genotype}${meta.devider_reference == 'round1' ? '_round1_comparison' : ''}"
+    def reference_arm = meta.devider_reference ?: 'round2_simple'
+    def reference_label = reference_arm == 'round1' ? 'Round 1 consensus' : 'Round 2 simple consensus'
+    def primary_arg = reference_arm == 'round2_simple' ? '--primary' : ''
+    def id_suffix = reference_arm == 'round1' ? '_round1_comparison' : ''
     """
     python3 ${projectDir}/bin/format_haplotypes.py \\
         --devider-dir ${devider_dir} \\
-        --output-fasta ${meta.id}_${meta.genotype}_haplotypes.fasta \\
-        --output-mapping ${meta.id}_${meta.genotype}_haplotype_map.tsv \\
-        --output-json ${meta.id}_${meta.genotype}_haplotype_report.json \\
+        --output-fasta ${output_prefix}_haplotypes.fasta \\
+        --output-mapping ${output_prefix}_haplotype_map.tsv \\
+        --output-json ${output_prefix}_haplotype_report.json \\
         --sample-id ${meta.id} \\
-        --genotype ${meta.genotype}
+        --genotype ${meta.genotype} \\
+        --reference-arm ${reference_arm} \\
+        --reference-label '${reference_label}' \\
+        --id-suffix '${id_suffix}' \\
+        ${primary_arg}
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
@@ -97,15 +106,22 @@ process FORMAT_HAPLOTYPES {
     """
 
     stub:
+    def output_prefix_s = "${meta.id}_${meta.genotype}${meta.devider_reference == 'round1' ? '_round1_comparison' : ''}"
+    def reference_arm_s = meta.devider_reference ?: 'round2_simple'
+    def reference_label_s = reference_arm_s == 'round1' ? 'Round 1 consensus' : 'Round 2 simple consensus'
+    def primary_s = reference_arm_s == 'round2_simple' ? 'true' : 'false'
     """
-    touch ${meta.id}_${meta.genotype}_haplotypes.fasta
+    touch ${output_prefix_s}_haplotypes.fasta
     echo -e "new_id\tabundance_pct\tdepth\tlength_bp\toriginal_devider_header" \\
-        > ${meta.id}_${meta.genotype}_haplotype_map.tsv
+        > ${output_prefix_s}_haplotype_map.tsv
 
-    cat <<-PYEOF > ${meta.id}_${meta.genotype}_haplotype_report.json
+    cat <<-PYEOF > ${output_prefix_s}_haplotype_report.json
     {
       "sample_id": "${meta.id}",
       "genotype":  "${meta.genotype}",
+      "reference_arm": "${reference_arm_s}",
+      "reference_label": "${reference_label_s}",
+      "primary": ${primary_s},
       "windows_found": 0,
       "haplotypes_per_window": [],
       "chains_stitched": 0,

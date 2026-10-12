@@ -30,8 +30,8 @@
         The process itself always exits 0.  This keeps the sample alive in the
         pipeline; the per-sample report will note that haplotypes are unavailable.
 
-    DEVIDER v0.0.1 flag notes — verified against `devider --help`:
-        -b          Input BAM (short form; v0.0.1 does not accept --bam).
+    DEVIDER v0.1.0 flag notes — verified against `devider --help`:
+        -b          Input BAM (short form).
         -r          Reference FASTA (short form; NOT --ref or --reference).
         -v          Input VCF — SNP set for phasing (short form; NOT --vcf).
         -o          Output directory name (short form).
@@ -52,7 +52,7 @@
         --allele-output
                     Write nucleotide alleles (A/C/G/T) rather than 0/1 codes.
                     Required by the stitching script and sample report renderer.
-        NO --merge-windows flag in v0.0.1.  Cross-region stitching is Step 5.20.
+        Cross-region stitching remains Step 5.20.
 
     Inputs:
         meta            — val map with `id` and `genotype` fields
@@ -69,12 +69,12 @@
                           DEVIDER exited non-zero.
         versions        — versions.yml
 
-    Container:  quay.io/biocontainers/devider:0.0.1--ha6fb395_3
-    Conda:      bioconda::devider=0.0.1  (includes osx-arm64 build)
-    Label:      process_high_memory  (worst case: 16 CPU, 64 GB, 4 hours — Step 5.19)
+    Container:  quay.io/biocontainers/devider:0.1.0--hb42e459_0
+    Conda:      bioconda::devider=0.1.0
+    Label:      process_medium
 
     Output published to:
-        ${params.outdir}/${meta.id}/haplotypes/${meta.genotype}/devider/
+        ${params.outdir}/${meta.id}/haplotypes/${meta.genotype}/<reference arm>/devider/
 
     See also:
         docs/data_flow.md              Step 5.19
@@ -90,12 +90,12 @@ process DEVIDER {
     tag "${meta.id}:${meta.genotype}"
 
     container "${ workflow.containerEngine == 'singularity' && !task.ext.singularity_pull_docker_container ?
-        'https://depot.galaxyproject.org/singularity/devider:0.0.1--ha6fb395_3' :
-        'quay.io/biocontainers/devider:0.0.1--ha6fb395_3' }"
+        'https://depot.galaxyproject.org/singularity/devider:0.1.0--hb42e459_0' :
+        'quay.io/biocontainers/devider:0.1.0--hb42e459_0' }"
     conda "${moduleDir}/environment.yml"
 
     publishDir (
-        path: { "${params.outdir}/${meta.id}/haplotypes/${meta.genotype}/devider/" },
+        path: { "${params.outdir}/${meta.id}/haplotypes/${meta.genotype}/${meta.devider_reference ?: 'round2_simple'}/devider/" },
         mode: 'copy'
     )
 
@@ -122,8 +122,8 @@ process DEVIDER {
     # ----------------------------------------------------------------
     # Run DEVIDER windowed haplotype reconstruction.
     #
-    # All flags are in short form (-b -r -v -o -t) — v0.0.1 does not
-    # accept the long-form equivalents.
+    # All flags are in short form (-b -r -v -o -t) and are supported by
+    # v0.1.0. Short flags also preserve compatibility with older releases.
     #
     # The OR-block ensures the process exits 0 even when DEVIDER fails,
     # by creating the output directory and touching devider.failed.
@@ -162,14 +162,19 @@ process DEVIDER {
     # via its top-level glob — no index needed because pysam uses until_eof.
     # ----------------------------------------------------------------
     if [ -f devider_output/ids.txt ]; then
-        haplotag_bam ${bam} -i devider_output/ids.txt \\
-            > devider_output/haplotagged.bam \\
-        || echo "haplotag_bam failed; stitcher will run without BAM evidence" >&2
+        if haplotag_bam ${bam} -i devider_output/ids.txt; then
+            mv ${bam}.tagged.bam devider_output/haplotagged.bam
+            if [ -f ${bam}.tagged.bam.bai ]; then
+                mv ${bam}.tagged.bam.bai devider_output/haplotagged.bam.bai
+            fi
+        else
+            echo "haplotag_bam failed; stitcher will run without BAM evidence" >&2
+        fi
     fi
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        devider: \$(devider --version 2>&1 | head -1 || echo "0.0.1")
+        devider: \$(devider --version 2>&1 | head -1 || echo "0.1.0")
     END_VERSIONS
     """
 
@@ -180,7 +185,7 @@ process DEVIDER {
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":
-        devider: "0.0.1"
+        devider: "0.1.0"
     END_VERSIONS
     """
 }

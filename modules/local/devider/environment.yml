@@ -3,4 +3,4 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - bioconda::devider=0.0.1
+  - bioconda::devider=0.1.0=hb42e459_0

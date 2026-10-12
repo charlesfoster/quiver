@@ -6,9 +6,8 @@
 # This script is the conda-profile fallback for DEVIDER — used when Docker/
 # Singularity containers are not available (e.g. --profile conda_local).
 #
-# No bioconda package exists for DEVIDER (as of 2026-05-13); installation
-# requires a working Rust toolchain.  Install Rust via https://rustup.rs/
-# if cargo is not present.
+# This source installation is a fallback when the Bioconda package or
+# BioContainer cannot be used. It requires a working Rust toolchain.
 #
 # Usage:
 #   bash bin/install_devider.sh [INSTALL_PREFIX]
@@ -19,15 +18,12 @@
 #
 # After installation, ensure $INSTALL_PREFIX/bin is in your PATH.
 #
-# DEVIDER version: v0.0.1 (only tagged release as of 2026-05-13).
+# DEVIDER version: v0.1.0.
 # Source: https://github.com/bluenote-1577/devider
 #
-# If a newer tag exists at implementation time, update DEVIDER_VERSION below,
-# then verify CLI flags against `devider --help` before updating devider.nf.
-
 set -euo pipefail
 
-DEVIDER_VERSION="v0.0.1"
+DEVIDER_VERSION="v0.1.0"
 INSTALL_PREFIX="${1:-$HOME/.local}"
 
 # ----------------------------------------------------------------

@@ -80,15 +80,20 @@ Variant calling outputs for each genotype branch.
 
 ## `results/<sample_id>/haplotypes/<GT>/`
 
-Haplotype reconstruction outputs from DEVIDER and post-hoc stitching.
+Haplotype reconstruction outputs from both DEVIDER reference arms. Round 2
+simple is primary; Round 1 is a reference-sensitivity comparison.
 
 | Path | Format | Contents | Absent when |
 |---|---|---|---|
-| `devider/` | directory | Raw DEVIDER output directory; contents vary by DEVIDER version and windowing. Parse by directory listing, not hard-coded filenames | `LOW_COVERAGE` flag (mean < `min_mean_coverage`); DEVIDER build failure |
-| `devider.failed` | marker | Empty file indicating DEVIDER exited non-zero. The pipeline continues; downstream steps emit partial results | Absent when DEVIDER succeeded |
-| `<sample_id>_<GT>_haplotypes.fasta` | FASTA | Haplotypes sorted by abundance (highest first) with annotated headers: `>ID abund:<pct> depth:<x> length:<bp>` | `LOW_COVERAGE`; DEVIDER failed; no haplotypes produced |
-| `<sample_id>_<GT>_haplotype_map.tsv` | TSV | Maps clean sequential haplotype IDs back to DEVIDER's original headers | As above |
-| `<sample_id>_<GT>_haplotype_report.json` | JSON | Per-haplotype summary: abundance, depth, length, and fallback flag if DEVIDER failed | As above |
+| `round2_simple/devider/` | directory | Raw DEVIDER output for the primary Round 2 simple reference arm | `LOW_COVERAGE`; primary arm unavailable |
+| `round2_simple/inputs/` | directory | Coordinate-matched Round 2 simple BAM, flagstat, LoFreq VCF, and filtered VCF used by DEVIDER | `LOW_COVERAGE`; primary arm unavailable |
+| `round1/devider/` | directory | Raw DEVIDER output for the Round 1 comparison arm | `LOW_COVERAGE`; comparison arm unavailable |
+| `<sample_id>_<GT>_haplotypes.fasta` | FASTA | Primary Round 2 simple haplotypes sorted by abundance; empty when DEVIDER fails or emits none | `LOW_COVERAGE` |
+| `<sample_id>_<GT>_haplotype_map.tsv` | TSV | Maps clean sequential haplotype IDs back to DEVIDER's original headers | `LOW_COVERAGE` |
+| `<sample_id>_<GT>_haplotype_report.json` | JSON | Primary report with reference arm, marker count, abundance, length, N count, and fallback status | `LOW_COVERAGE` |
+| `<sample_id>_<GT>_round1_comparison_haplotypes.fasta` | FASTA | Round 1 comparison haplotypes; empty when DEVIDER fails or emits none | `LOW_COVERAGE` |
+| `<sample_id>_<GT>_round1_comparison_haplotype_map.tsv` | TSV | Mapping table for the Round 1 comparison | As above |
+| `<sample_id>_<GT>_round1_comparison_haplotype_report.json` | JSON | Arm-labelled Round 1 comparison report | As above |
 
 ---
 
@@ -98,7 +103,7 @@ HTML reports summarising the run.
 
 | Path | Format | Contents | Absent when |
 |---|---|---|---|
-| `results/<sample_id>/reports/<sample_id>_summary.html` | HTML | Per-sample Jinja2 report: read counts at each stage, genotype summary, per-branch coverage, variant table, haplotype summary, all flags. NanoPlot PNGs embedded as base64 | Never absent once sample completes input validation |
+| `results/<sample_id>/reports/<sample_id>_summary.html` | HTML | Per-sample report with Round 2 primary haplotypes and an expandable Round 1 comparison, plus mapping and marker metrics for both arms | Never absent once sample completes input validation |
 | `results/<sample_id>/reports/<sample_id>_summary.json` | JSON | Machine-readable version of the per-sample report | As above |
 | `results/reports/multiqc_report.html` | HTML | MultiQC aggregation across all samples: NanoPlot, mosdepth, samtools flagstat, bcftools stats | Only absent if no samples complete successfully |
 | `results/reports/run_summary.html` | HTML | Tabular run-level summary listing each sample status (PASS / NO_HCV / LOW_COVERAGE / MIXED) with links to per-sample reports | As above |

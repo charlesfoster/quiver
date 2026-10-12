@@ -59,12 +59,12 @@ def helpMessage() {
 
     Depth normalisation:
         --lofreq_max_depth INT       rasusa depth cap for LoFreq [default: 5000]
-        --devider_max_depth INT      rasusa depth cap for DEVIDER [default: 1000]
+        --devider_max_depth INT      rasusa depth cap for DEVIDER [default: 5000]
         --rasusa_seed_lofreq INT     Random seed for rasusa (LoFreq) [default: 42]
         --rasusa_seed_devider INT    Random seed for rasusa (DEVIDER) [default: 43]
 
     Haplotype reconstruction:
-        --devider_min_cov INT        DEVIDER --min-cov: per-window depth floor [default: 50]
+        --devider_min_cov INT        DEVIDER --min-cov: per-window depth floor [default: 10]
         --devider_min_abund FLOAT    DEVIDER --min-abund: minimum haplotype abundance [default: 0.25]
         --stitch_min_reads INT       Minimum spanning reads to stitch windows [default: 5]
 

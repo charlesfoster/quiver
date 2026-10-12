@@ -4,7 +4,7 @@ format_haplotypes.py — Format and annotate DEVIDER haplotype output.
 
 Purpose
 -------
-DEVIDER v0.0.1 reconstructs haplotypes and emits ``majority_vote_haplotypes.fasta``
+DEVIDER v0.1.0 reconstructs haplotypes and emits ``majority_vote_haplotypes.fasta``
 with verbose internal headers, e.g.::
 
     >Contig:S01_1_consensus,Range:ALL-ALL,Haplotype:6,Abundance:31.98,Depth:1392.79 SimpleConsensus
@@ -163,7 +163,7 @@ _HEADER_PATTERNS = [
     re.compile(r"^(?P<start>\d+)[_\-](?P<end>\d+)[_\-](?P<hap>\d+)\b"),
 ]
 
-# Matches DEVIDER 0.0.1 whole-genome (single-window) output:
+# Matches DEVIDER whole-genome (single-window) output:
 #   >Contig:...,Range:ALL-ALL,Haplotype:N,...
 _ALLALL_RE = re.compile(r"Range:ALL-ALL.*?Haplotype:(?P<hap>\d+)", re.IGNORECASE)
 # Abundance and Depth fields in DEVIDER ALL-ALL headers (values are percentages / mean depth)
@@ -175,7 +175,7 @@ def parse_devider_header(header: str) -> Optional[tuple[int, int, int]]:
     """
     Parse a DEVIDER haplotype FASTA header into (start, end, hap_index).
 
-    DEVIDER 0.0.1 ALL-ALL mode (whole-genome single window) emits headers like:
+    DEVIDER ALL-ALL mode (whole-genome single window) emits headers like:
         >Contig:...,Range:ALL-ALL,Haplotype:N,Abundance:X,Depth:Y
     All haplotypes are assigned to virtual window (0, 0) so they are grouped
     as a single window and emitted as individual chains without stitching.
@@ -185,7 +185,7 @@ def parse_devider_header(header: str) -> Optional[tuple[int, int, int]]:
     """
     name = header.split(None, 1)[0]
 
-    # DEVIDER 0.0.1 ALL-ALL: single virtual window at (0, 0).
+    # DEVIDER ALL-ALL: single virtual window at (0, 0).
     m = _ALLALL_RE.search(name)
     if m:
         try:
@@ -262,7 +262,7 @@ def discover_devider_outputs(devider_dir: Path) -> tuple[list[Path], list[Path],
         return [], [], True
 
     # Only look at top-level files — do NOT recurse into intermediate/.
-    # DEVIDER 0.0.1 emits two FASTA files at the top level:
+    # DEVIDER emits two FASTA files at the top level:
     #   majority_vote_haplotypes.fasta — full-length genome sequences (preferred)
     #   snp_haplotypes.fasta           — variable-site-only sequences (261 bp)
     # We want the full-genome sequences for the merged haplotype output.
@@ -720,6 +720,7 @@ def write_fasta(
     sample_id: str,
     genotype: str,
     hap_by_pos: dict[tuple[int, int], "WindowHaplotype"] | None = None,
+    id_suffix: str = "",
 ) -> None:
     """
     Write one record per chain with enriched header.
@@ -749,7 +750,7 @@ def write_fasta(
                     depth_tag = f" depth:{wh.reported_depth:.2f}"
 
             fh.write(
-                f">{sample_id}_{genotype}_haplotype_{n}"
+                f">{sample_id}_{genotype}{id_suffix}_haplotype_{n}"
                 f" abund:{abund_pct:.2f}{depth_tag} length:{length}\n"
             )
             seq = chain.sequence
@@ -764,6 +765,7 @@ def write_mapping(
     sample_id: str,
     genotype: str,
     hap_by_pos: dict[tuple[int, int], "WindowHaplotype"] | None = None,
+    id_suffix: str = "",
 ) -> None:
     """
     Write a TSV mapping new haplotype IDs to the original DEVIDER headers.
@@ -774,7 +776,7 @@ def write_mapping(
     with open(out_path, "w") as fh:
         fh.write("new_id\tabundance_pct\tdepth\tlength_bp\toriginal_devider_header\n")
         for n, chain in enumerate(chains):
-            new_id    = f"{sample_id}_{genotype}_haplotype_{n}"
+            new_id    = f"{sample_id}_{genotype}{id_suffix}_haplotype_{n}"
             abund_pct = f"{chain.abundance_lower_bound * 100:.2f}"
             length    = len(chain.sequence)
 
@@ -801,6 +803,11 @@ def build_report(
     fallback_reason: Optional[str],
     bam_present: bool,
     min_reads: int,
+    reference_arm: str,
+    reference_label: str,
+    primary: bool,
+    marker_positions: Optional[int],
+    id_suffix: str = "",
 ) -> dict[str, Any]:
     """Assemble the stitch report JSON payload."""
     # Per-window haplotype counts (ordered by window_index).
@@ -819,10 +826,11 @@ def build_report(
     chains_dict = []
     for n, c in enumerate(chains):
         chains_dict.append({
-            "id": f"{sample_id}_{genotype}_haplotype_{n}",
+            "id": f"{sample_id}_{genotype}{id_suffix}_haplotype_{n}",
             "windows": c.windows,
             "hap_indices": c.hap_indices,
             "length_bp": len(c.sequence),
+            "n_bases": c.sequence.upper().count("N"),
             "spanning_reads": c.spanning_reads_per_junction,
             "abundance_lower_bound": round(c.abundance_lower_bound, 4),
         })
@@ -830,6 +838,10 @@ def build_report(
     report: dict[str, Any] = {
         "sample_id": sample_id,
         "genotype": genotype,
+        "reference_arm": reference_arm,
+        "reference_label": reference_label,
+        "primary": primary,
+        "devider_marker_positions": marker_positions,
         "min_reads_threshold": min_reads,
         "bam_present": bam_present,
         "windows_found": n_windows,
@@ -876,6 +888,15 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
                    help="Sample identifier (used in record headers and report).")
     p.add_argument("--genotype", required=True,
                    help="Genotype label (used in record headers and report).")
+    p.add_argument("--reference-arm", default="round2_simple",
+                   choices=("round1", "round2_simple"),
+                   help="Consensus reference arm used for this DEVIDER run.")
+    p.add_argument("--reference-label", default="Round 2 simple consensus",
+                   help="Human-readable reference label stored in the report.")
+    p.add_argument("--primary", action="store_true",
+                   help="Mark this arm as the primary haplotype result.")
+    p.add_argument("--id-suffix", default="",
+                   help="Suffix inserted before _haplotype_N in FASTA record IDs.")
     p.add_argument("--min-reads", type=int, default=5,
                    help="Minimum spanning reads to support a window-to-window link "
                         "(only relevant if DEVIDER produced multiple windows; default 5).")
@@ -900,6 +921,11 @@ def _emit_empty(args: argparse.Namespace, reason: str) -> None:
         fallback_reason=reason,
         bam_present=False,
         min_reads=args.min_reads,
+        reference_arm=args.reference_arm,
+        reference_label=args.reference_label,
+        primary=args.primary,
+        marker_positions=None,
+        id_suffix=args.id_suffix,
     )
     write_report(args.output_json, report)
 
@@ -940,7 +966,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     bam_present = bool(bam_paths)
     assignments: dict[str, dict[int, int]] = {}
     if bam_present:
-        # Use the first BAM found.  DEVIDER v0.0.1 emits exactly one tagged
+        # Use the first BAM found. DEVIDER emits exactly one tagged
         # BAM per run; if multiple were found we picked the lexicographically
         # first.  No need to merge — they would carry the same information.
         bam_path = bam_paths[0]
@@ -965,8 +991,22 @@ def main(argv: Optional[list[str]] = None) -> int:
     hap_by_pos: dict[tuple[int, int], WindowHaplotype] = {
         (h.window_index, h.hap_index): h for h in haplotypes
     }
-    write_fasta(args.output_fasta, chains, args.sample_id, args.genotype, hap_by_pos)
-    write_mapping(args.output_mapping, chains, args.sample_id, args.genotype, hap_by_pos)
+    marker_positions = None
+    hap_info = args.devider_dir / "hap_info.txt"
+    if hap_info.is_file():
+        marker_positions = sum(
+            1 for line in hap_info.read_text().splitlines()
+            if re.match(r"^\s*\d+\t", line)
+        )
+
+    write_fasta(
+        args.output_fasta, chains, args.sample_id, args.genotype,
+        hap_by_pos, args.id_suffix,
+    )
+    write_mapping(
+        args.output_mapping, chains, args.sample_id, args.genotype,
+        hap_by_pos, args.id_suffix,
+    )
     report = build_report(
         sample_id=args.sample_id,
         genotype=args.genotype,
@@ -978,6 +1018,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         fallback_reason=(None if bam_present else "no haplotype-tagged BAM available"),
         bam_present=bam_present,
         min_reads=args.min_reads,
+        reference_arm=args.reference_arm,
+        reference_label=args.reference_label,
+        primary=args.primary,
+        marker_positions=marker_positions,
+        id_suffix=args.id_suffix,
     )
     write_report(args.output_json, report)
     return 0
@@ -1003,6 +1048,9 @@ if __name__ == "__main__":
                 {
                     "sample_id": args.sample_id,
                     "genotype": args.genotype,
+                    "reference_arm": args.reference_arm,
+                    "reference_label": args.reference_label,
+                    "primary": args.primary,
                     "fallback_used": True,
                     "reason": f"unhandled exception: {exc!r}",
                 },
